@@ -14,7 +14,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Portfolio](https://img.shields.io/badge/Portfolio-ff6b00?logo=astro&logoColor=white)](https://portfolio.ivanjonasfc.dev/proyectos/job-radar/)
 
-<img src="assets/dashboard.png" alt="Job-radar — panel de hoy" width="920" />
+<img src="assets/Dashboard.png" alt="Job-radar — panel de hoy" width="920" />
 
 </div>
 

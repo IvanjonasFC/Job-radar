@@ -45,8 +45,8 @@ Ficha completa en el [portfolio](https://portfolio.ivanjonasfc.dev/proyectos/job
 
 <table>
   <tr>
-    <td align="center"><b>Analíticas</b><br/><img src="assets/analiticas.png" width="270" alt="Analíticas" /></td>
-    <td align="center"><b>Pipeline (Kanban)</b><br/><img src="assets/pipeline.png" width="270" alt="Pipeline" /></td>
+    <td align="center"><b>Analíticas</b><br/><img src="assets/Analiticas.png" width="270" alt="Analíticas" /></td>
+    <td align="center"><b>Pipeline (Kanban)</b><br/><img src="assets/Pipeline.png" width="270" alt="Pipeline" /></td>
     <td align="center"><b>Ofertas</b><br/><img src="assets/ofertas.png" width="270" alt="Ofertas" /></td>
   </tr>
 </table>

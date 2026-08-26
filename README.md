@@ -1,201 +1,215 @@
-# Empleo CRM
+<div align="center">
 
-CRM web **self-hosted** para automatizar y centralizar la búsqueda de empleo. Reúne en un solo sitio las ofertas detectadas, su puntuación por IA, la carta y los ajustes de CV generados, y el seguimiento de cada candidatura (kanban + recordatorios). Construido con **Astro SSR** sobre una base de datos **PostgreSQL** que actúa como **única fuente de verdad**.
+# Job-radar
 
-> Pensado para ayudarte a **actuar**, no solo a informarte: la pantalla de inicio es una "cola de hoy" con las mejores ofertas abiertas que aún no has postulado.
+**Búsqueda de empleo automatizada y self-hosted: scraping + scoring con IA multi-proveedor, todo gobernado desde una única pantalla de configuración.**
 
-![Estado](https://img.shields.io/badge/estado-beta-orange) ![Licencia](https://img.shields.io/badge/licencia-MIT-blue)
+[![Astro](https://img.shields.io/badge/Astro-5-BC52EE?logo=astro&logoColor=white)](https://astro.build)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![n8n](https://img.shields.io/badge/n8n-automation-EA4B71?logo=n8n&logoColor=white)](https://n8n.io)
+[![Python](https://img.shields.io/badge/Python-JobSpy-3776AB?logo=python&logoColor=white)](https://github.com/speedyapply/JobSpy)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com)
+[![Ollama](https://img.shields.io/badge/IA_local-Ollama-ff6b00?logo=ollama&logoColor=white)](https://ollama.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Portfolio](https://img.shields.io/badge/Portfolio-ff6b00?logo=astro&logoColor=white)](https://portfolio.ivanjonasfc.dev/proyectos/job-radar/)
 
-> 📘 **¿Instalas desde cero o quieres entender el sistema a fondo?** Empieza por la carpeta **[`Instalacion/`](./Instalacion/)** — cómo funciona, base de datos, flujos, y dónde tocar cada cosa.
+<img src="assets/dashboard.png" alt="Job-radar — panel de hoy" width="920" />
 
----
-
-## ✨ Qué hace
-
-| Página | Para qué |
-|---|---|
-| **Hoy** | Cola diaria: mejores ofertas abiertas, frescas y sin postular + KPIs accionables. |
-| **Ofertas** | Tabla filtrable (encaje, estado, modalidad, texto) con ubicación normalizada y marca 📍 para ofertas locales. |
-| **Pipeline** | Kanban con arrastrar-y-soltar (Abiertas → CV → Postuladas → Entrevista → Resuelta) + recordatorios de entrevistas y próximas acciones. |
-| **Config** | Define tu zona, modalidades aceptadas dentro/fuera de ella, score mínimo, fuentes de scraping, palabras clave y **tu perfil** (nombre, contacto y CV que usa la IA) — todo guardado en la BD y aplicado al instante. Sin tocar código ni el vault. |
-| **Analíticas** | Embudo de conversión (detección → oferta), actividad por semana, tecnologías más pedidas, tasa y velocidad de respuesta, tu tiempo de reacción, conversión por encaje/fuente/modalidad y salud del sistema. |
-| **Ficha de oferta** | Por qué encaja (veredicto + razones + keywords), carta editable/copiable, ajustes de CV, y documentos IA (prep entrevista, análisis de carencias). |
-
-Características transversales:
-
-- **Ubicación robusta:** normaliza las cadenas sucias de los portales (códigos `MD`→Madrid, `remote`→Remoto…) y resalta las ofertas cercanas.
-- **Ciclo de vida completo:** `nueva → evaluada → notificada → generada → aplicada` (+ `descartada` / `caducada`).
-- **Limpieza automática** de ofertas antiguas (marcado, sin borrado físico).
-- **Estética dark** con acento naranja, tipografías Space Grotesk + Inter y glass.
+</div>
 
 ---
 
-## 🧱 Stack
+## Qué es Job-radar
 
-- **[Astro](https://astro.build) 5** en modo servidor (`output: 'server'`, adaptador `@astrojs/node` standalone).
-- **React 19** para las islas interactivas (kanban).
-- **Tailwind CSS 4** (tema en `src/styles/global.css`).
-- **PostgreSQL** vía [`postgres.js`](https://github.com/porsager/postgres) (SQL parametrizado; drizzle-orm disponible para tipado).
-- Fuentes servidas desde [Bunny Fonts](https://fonts.bunny.net) (sin dependencias npm).
+Job-radar es un **sistema self-hosted de búsqueda de empleo** que automatiza lo tedioso y deja al candidato solo lo que importa: decidir a qué apuntar. Cada pocas horas rastrea portales (Indeed, LinkedIn) y feeds RSS, **puntúa cada oferta con IA** (0–100 según una rúbrica de encaje), genera **CV y carta a medida** por oferta y lo organiza todo en un CRM tipo Kanban — corriendo 24/7 en infraestructura propia (NAS + Docker), sin depender de servicios de pago.
 
----
+Lo que lo hace distinto: **todo se controla desde una única pantalla de Configuración**. Zona, modalidades, portales, términos de búsqueda, umbrales, perfil y claves de IA viven en la base de datos; la web los escribe y el scraper, n8n y el worker los leen de ahí. **Cambias un campo en la web y todo el sistema obedece — sin tocar código ni redesplegar.** Eso lo hace adaptable a cualquier persona o sector (de "desarrollador" a "enfermero") con solo rellenar un formulario.
 
-## 🏗️ Arquitectura
+> **Un diseño, dos motores.** El scoring y la generación pueden correr en **n8n** (7 workflows, robusto, 24/7) o en un **worker Node autónomo** (stack mínimo de 3 piezas: Postgres + web + worker). Ambos leen la misma configuración de la BD.
+
+Ficha completa en el [portfolio](https://portfolio.ivanjonasfc.dev/proyectos/job-radar/).
+
+## Características
+
+- **Radar de ofertas** — scraping (Python + JobSpy: Indeed/LinkedIn) + feeds RSS, con prefiltro por título configurable.
+- **Scoring con IA** — rúbrica 0–100 (skills 35 · seniority 20 · encaje 15 · modalidad/ubicación 15 · proyección 15) que devuelve JSON; descarta lo no‑IT automáticamente.
+- **IA multi-proveedor con fallback** — Groq → Gemini → xAI (Grok) → Ollama local. Si uno se satura, el siguiente responde; una oferta sin puntuar vuelve a la cola y se reintenta.
+- **CV y carta a medida** — generación por oferta desde tu perfil real, sin inventar experiencia ni títulos.
+- **CRM completo** — cola de hoy, buscador de ofertas, pipeline Kanban (drag & drop) y recordatorios de seguimiento.
+- **Analíticas en vivo** — embudo de conversión, tecnologías más pedidas y tiempo de reacción.
+- **Todo configurable desde la web** — una única fuente de verdad en Postgres; adaptable a cualquier perfil sin tocar código.
+- **Self-hosted y privado** — corre en tu NAS/servidor; tus datos y tus claves nunca salen de tu infraestructura.
+
+## Capturas
+
+<table>
+  <tr>
+    <td align="center"><b>Analíticas</b><br/><img src="assets/analiticas.png" width="270" alt="Analíticas" /></td>
+    <td align="center"><b>Pipeline (Kanban)</b><br/><img src="assets/pipeline.png" width="270" alt="Pipeline" /></td>
+    <td align="center"><b>Ofertas</b><br/><img src="assets/ofertas.png" width="270" alt="Ofertas" /></td>
+  </tr>
+</table>
+
+## Arquitectura
+
+```mermaid
+graph TD
+    subgraph NAS ["Infraestructura self-hosted - NAS + Docker"]
+        CFG["Config - empleo.settings<br/>UNICA FUENTE DE VERDAD"]
+        PG["PostgreSQL 16<br/>schema empleo"]
+        SCR["Scraper - Python + JobSpy + RSS<br/>contenedor one-shot, programado"]
+        N8N["n8n - 7 workflows<br/>radar / scoring / cartas"]
+        WK["Worker Node<br/>motor alternativo sin n8n"]
+        WEB["Web CRM - Astro SSR"]
+        OL["Ollama - IA local"]
+        CADDY["Caddy - HTTPS + pasarela LLM"]
+    end
+    CLOUD["LLMs cloud<br/>Groq / Gemini / xAI"]
+
+    WEB -->|"escribe config"| CFG
+    CFG -->|"lee"| SCR
+    CFG -->|"lee"| N8N
+    CFG -->|"lee"| WK
+    SCR -->|"INSERT ofertas nuevas"| PG
+    N8N -->|"scoring + cartas"| PG
+    WK -->|"scoring + cartas"| PG
+    PG <-->|"lee / escribe"| WEB
+    N8N -->|"fallback"| CLOUD
+    N8N -->|"fallback local"| OL
+    CADDY --> WEB
+```
+
+## El sistema manda desde Config (fuente de verdad única)
+
+El corazón del diseño es la tabla `empleo.settings` (una fila JSONB). La **web** la edita; el **scraper**, **n8n** y el **worker** la leen. No hay configuración duplicada ni valores a fuego repartidos por el código:
+
+| Ajuste | Lo escribe | Lo consume | Cuándo aplica |
+| --- | --- | --- | --- |
+| Zona, modalidades, umbral, marca | Web | Web + n8n (estado de oferta) | Al instante |
+| Portales, términos, países, antigüedad, RSS | Web | Scraper | En el siguiente scrapeo programado |
+| Perfil profesional | Web | Scoring + cartas (n8n / worker) | En la siguiente ejecución |
+| Claves de IA (Groq / Gemini / xAI / Ollama) | Web | Scoring + cartas (n8n / worker), con *fallback* a `.env` | En la siguiente ejecución |
+
+Consecuencia práctica: **para adaptar el sistema a otra persona no se toca código** — se rellena el formulario de Config (perfil, zona, sector, claves) y funciona. Los valores por defecto del repositorio son genéricos y **no contienen datos personales**.
+
+## El motor de IA (multi-proveedor, con fallback)
+
+El scoring y la generación hablan con cualquier proveedor compatible con la API de OpenAI (`/chat/completions`) y prueban una **cadena ordenada** hasta obtener una respuesta válida:
 
 ```
-┌─────────────┐    inserta ofertas     ┌──────────────────┐
-│  Scraper /  │ ─────────────────────► │                  │
-│  n8n (IA)   │    puntúa, genera      │   PostgreSQL     │  ◄── fuente de verdad única
-└─────────────┘ ◄───────────────────── │   (schema empleo)│
-      ▲            webhooks (opcional)  └──────────────────┘
-      │                                          ▲
-      │ botones "aplicar / generar / IA"         │ lee y escribe
-      │                                          │
-┌─────┴───────────────────────────────────────── ┴──┐
-│              Empleo CRM (este repo)                │
-│   Astro SSR · React · Tailwind · postgres.js       │
-└────────────────────────────────────────────────────┘
+Groq (rápido)  →  Gemini  →  xAI (Grok)  →  Ollama (local, ilimitado)
 ```
 
-El CRM **no tiene BD propia**: lee y escribe directamente sobre `empleo`. La ingesta de ofertas y la IA (puntuación, generación de carta/CV) son **opcionales** y externas (un scraper, n8n, o lo que prefieras). Si solo quieres el CRM, puedes insertar ofertas a mano en `empleo.job_offers`.
+Cada clave se toma primero de Config (BD) y, si está vacía, del entorno (`.env`). Si un proveedor se satura o cae, entra el siguiente; y si una oferta no logra puntuarse, **vuelve a estado `nueva` y se reintenta** en la siguiente pasada — el sistema se auto‑cura y no pierde ofertas.
 
----
+<details>
+<summary>Ver detalle del stack</summary>
 
-## 🚀 Puesta en marcha
+### Web / CRM
+| Componente | Detalle |
+| --- | --- |
+| **Astro 5 (SSR)** | `output: server`, adaptador `@astrojs/node` (standalone). Datos en vivo desde Postgres. |
+| **TypeScript** | Tipado en la capa de datos, config y endpoints. |
+| **React (islas) + Recharts + dnd-kit** | Kanban con drag & drop y gráficos de las analíticas. |
+| **postgres-js / Drizzle** | Acceso a Postgres con rol de mínimos privilegios (`empleo_web`). |
+| **Zod** | Validación de entrada. |
 
-> ¿Quieres adaptarlo a tu perfil (marca, zona, portales, rúbrica de IA)? Todo lo personalizable está en **[docs/CONFIGURACION.md](./docs/CONFIGURACION.md)**.
+### Automatización e IA
+| Componente | Detalle |
+| --- | --- |
+| **n8n** | 7 workflows: radar (scrape RSS + scoring), digest, acciones (carta/CV, aplicar, descartar), healthcheck, recordatorios, IA on-demand, guardar carta. |
+| **Worker Node** | Motor alternativo (solo dependencia `pg`) que replica el bucle: scoring, generación y acciones. Reduce el sistema a 3 piezas. |
+| **Multi-LLM** | Groq, Google Gemini, xAI (Grok), Ollama local — en cadena, con reintento. |
 
-### ⚡ Opción rápida: todo con un comando (Docker)
+### Scraping e infraestructura
+| Componente | Detalle |
+| --- | --- |
+| **Python + JobSpy** | Indeed y LinkedIn; contenedor de un solo uso lanzado por el programador del NAS. |
+| **feedparser (RSS)** | Feeds de remoto global (WeWorkRemotely, Tecnoempleo…). |
+| **Docker + Compose** | Stack de 3 piezas (db + web + worker) con perfiles opcionales `scraper` y `backup`. |
+| **Caddy** | HTTPS automático y pasarela hacia los LLMs. |
 
-Levanta **Postgres + web + worker (IA)** de una vez. No necesitas n8n ni el scraper Python.
+</details>
 
+## Seguridad y privacidad
+
+- **Self-hosted**: todo corre en tu NAS/servidor; las ofertas, tu perfil y tus claves nunca salen de tu red.
+- **Secretos fuera del repo**: `.env` y credenciales están en `.gitignore`; solo se versiona `.env.example` con placeholders. Los workflows de n8n del repo van **neutralizados** (sin tokens, dominios ni datos personales).
+- **Rol de BD de mínimos privilegios** para la web (`empleo_web`): lee y solo actualiza lo imprescindible.
+- **Login** en la web (sesión con cookie httpOnly) y proxy server-side hacia n8n (la URL interna nunca llega al navegador).
+
+<details>
+<summary>Estructura del proyecto</summary>
+
+```text
+Job-radar/
+├── src/                      # Web CRM (Astro SSR + TypeScript)
+│   ├── pages/                # hoy, ofertas, pipeline, analiticas, configuracion, login + api/
+│   ├── lib/                  # config.ts (settings), db.ts, queries.ts, auth.ts
+│   └── components/           # KanbanBoard.tsx
+├── db/
+│   └── schema.sql            # esquema empleo (job_offers, applications, generated, settings, events)
+├── automation/
+│   ├── n8n/                  # 7 workflows exportados (neutralizados) + profile.example.md
+│   ├── worker/               # motor Node autónomo (alternativa a n8n)
+│   └── scraper/              # scraper Python (JobSpy + RSS), lee Config de la BD
+├── assets/                   # capturas del CRM
+├── docker-compose.yml        # db + web + worker (+ perfiles scraper / backup)
+├── Dockerfile                # imagen de la web
+└── .env.example              # plantilla de variables (sin secretos)
+```
+
+</details>
+
+<details>
+<summary>Cómo ejecutar el proyecto</summary>
+
+**Requisitos:** Docker + Docker Compose (y, para desarrollo, Node 20+). Una clave de IA (Groq/Gemini/xAI) o un Ollama local.
+
+**1) Configura el entorno:**
 ```bash
-cp .env.example .env          # pon al menos DB_PASSWORD (y APP_PASSWORD si publicas)
+cp .env.example .env      # rellena DATABASE_URL, N8N_WEBHOOK_BASE y (si usas compose) DB_PASSWORD
+```
+
+**2) Levanta el stack (Postgres + web + worker):**
+```bash
 docker compose up -d --build
-# abre http://localhost:3010 → Config → IA: pega tu clave (Groq/Gemini/xAI). Con una basta.
+# Web en http://127.0.0.1:3010  ·  el worker puntúa en bucle
+docker compose --profile scraper run --rm scraper   # una pasada de scraping (opcional)
 ```
 
-Perfiles opcionales: `docker compose --profile scraper up -d` (añade Indeed/LinkedIn) y
-`docker compose --profile backup up -d` (backups diarios `pg_dump` a `./backups`). Ponlo siempre tras un
-**reverse proxy** con TLS; no expongas el puerto a internet.
+**3) Abre la web → pestaña Config** y rellena zona, portales, tu perfil y una clave de IA. A partir de ahí, el scraper y el motor obedecen a esa configuración.
 
-> El resto de esta sección es el montaje **manual** (sin Docker), por si lo prefieres.
-
-### Requisitos (manual)
-
-- **Node 20+** y una instancia de **PostgreSQL 14+**.
-
-### 1. Base de datos
-
-```bash
-# Crea la BD y aplica el esquema (crea schema, tablas, índices y el rol empleo_web)
-createdb empleo
-psql "postgres://ADMIN:PASS@localhost:5432/empleo" -f db/schema.sql
-```
-
-Edita `db/schema.sql` y cambia la contraseña del rol `empleo_web` (`CHANGE_ME`) antes de aplicarlo, o cámbiala después con `ALTER ROLE empleo_web PASSWORD '...';`.
-
-### 2. Variables de entorno
-
-```bash
-cp .env.example .env
-# Edita .env y pon tu DATABASE_URL
-```
-
-| Variable | Obligatoria | Descripción |
-|---|:---:|---|
-| `DATABASE_URL` | ✅ | Conexión a Postgres. El `search_path=empleo` va en la URL. |
-| `N8N_WEBHOOK_BASE` | ❌ | Base del webhook de n8n para acciones IA. Vacío = botones IA inactivos. |
-| `PORT` | ❌ | Puerto del servidor (por defecto `3010`). |
-
-### 3. Desarrollo
-
+**Desarrollo local (sin Docker):**
 ```bash
 npm install
-npm run dev        # http://localhost:3010
+npm run dev     # http://localhost:4321
 ```
 
-### 4. Producción
+**Vía n8n (opcional, en vez del worker):** importa `automation/n8n/*.json` en tu instancia, apunta `N8N_WEBHOOK_BASE` a sus webhooks y pon tus claves en Config (o en el `.env` de n8n como respaldo).
 
-```bash
-npm run build
-npm run start      # sirve dist/server/entry.mjs
-```
+</details>
 
-### 5. Docker
+## Roadmap
 
-Ver la **opción rápida** al principio de esta sección (`docker compose up -d --build`, incluye Postgres + web + worker).
-
-### 6. Primer arranque (configura desde la web)
-
-Abre la web y ve a **Config**. Desde ahí, sin tocar código, defines:
-
-- **Tu zona** (ciudades locales) y qué modalidades aceptas dentro y fuera de ella.
-- **Fuentes de scraping**: portales, países, puestos, antigüedad — el scraper los lee de la BD.
-- **Tu perfil**: nombre, contacto y CV que la IA usa para cartas y prep de entrevista.
-- **Preferencias**: score mínimo de la "cola de hoy" y marca de la cabecera.
-
-Todo se guarda en `empleo.settings` y se aplica al instante. Es el único paso que necesita un usuario nuevo para adaptar el sistema a su caso.
+- [ ] Normalizar los *verdicts* de la IA a un conjunto fijo (ES/EN unificados).
+- [ ] Panel de estado de proveedores de IA (latencia y errores por proveedor).
+- [ ] Más portales vía proxy (InfoJobs/Google Jobs) y más países.
+- [ ] Exportar CV/carta a PDF/DOCX desde la propia web.
+- [ ] Modo multiusuario (varios perfiles sobre la misma instancia).
 
 ---
 
-## 🗂️ Estructura del proyecto
+## Autor
 
-```
-app/
-├── db/
-│   ├── schema.sql              # esquema consolidado + rol de solo-web
-│   └── retention.sql           # mantenimiento opcional (índices, retención, particionado)
-├── src/
-│   ├── components/
-│   │   └── KanbanBoard.tsx     # kanban React (drag & drop)
-│   ├── layouts/
-│   │   └── Base.astro          # cabecera glass + navegación
-│   ├── lib/
-│   │   ├── db.ts               # cliente Postgres (postgres.js)
-│   │   ├── queries.ts          # consultas de lectura
-│   │   └── loc.ts              # normalización de ubicación/modalidad
-│   ├── pages/
-│   │   ├── index.astro         # "Hoy" (cola diaria + KPIs)
-│   │   ├── ofertas/            # tabla + ficha [id]
-│   │   ├── pipeline.astro      # kanban + recordatorios
-│   │   ├── analiticas.astro    # métricas
-│   │   └── api/                # endpoints SSR (mover, aplicar, limpiar, carta…)
-│   └── styles/global.css       # tema (Tailwind 4 @theme)
-├── automation/                # capa opcional de ingesta + IA (ver su README)
-│   ├── worker/                # motor IA autónomo (Node) — alternativa ligera a n8n
-│   ├── scraper/               # recolector de ofertas (JobSpy + RSS)
-│   └── n8n/                   # flujos wf1–wf7 + profile.example.md
-├── .env.example
-├── docker-compose.yml          # despliegue 3 piezas: db + web + worker (docker compose up)
-├── Dockerfile
-└── astro.config.mjs
-```
+**Iván Jonás Fernández Correa** — Técnico Superior en DAM + ASIR. Perfil híbrido desarrollo + sistemas (full-stack, self-hosted, IA aplicada).
 
----
+<p>
+  <a href="https://portfolio.ivanjonasfc.dev/proyectos/job-radar/"><img src="https://img.shields.io/badge/Ver_en_el_Portfolio-ff6b00?style=for-the-badge&logo=astro&logoColor=white" alt="Portfolio"></a>
+  <a href="https://www.linkedin.com/in/ivanjonasfc/"><img src="https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn"></a>
+</p>
 
-## 🔌 Motor de IA: worker autónomo **o** n8n (elige)
+## Licencia
 
-Los botones **Aplicar**, **Generar CV**, **Analizar** y los documentos IA hacen `POST` a `${N8N_WEBHOOK_BASE}/...`. Ese destino puede ser:
-
-- **Worker autónomo** ([`automation/worker/`](./automation/worker/)) — un servicio Node ligero (solo `pg`) que puntúa, redacta y (opcional) ingesta RSS. Reduce el sistema a **3 piezas: Postgres + web + worker**, sin n8n ni pasarelas. Apunta `N8N_WEBHOOK_BASE=http://empleo-worker:8080/empleo` y listo. **La forma más rápida de que cualquiera lo despliegue.**
-- **n8n** ([`automation/n8n/`](./automation/)) — los 7 flujos, para quien además quiera Telegram, escritura en Obsidian y automatizaciones visuales.
-
-Puedes usar **uno, otro, o los dos a la vez** (ambos leen la config y escriben la misma BD). Sin ninguno, el CRM sigue siendo un gestor manual (kanban, notas, estados). El esquema es agnóstico del origen: cualquier proceso que inserte en `empleo.job_offers` alimenta el CRM.
-
-**Claves de IA:** se ponen en la pestaña **Config → IA** de la web (o en el `.env` del worker). Con una (p. ej. Groq) basta; el resto es fallback. Todo con placeholders en el repo — ningún dato ni clave real.
-
----
-
-## 🔒 Seguridad
-
-- El rol `empleo_web` tiene **privilegios mínimos**: `SELECT` en todo, `INSERT/UPDATE` solo en las tablas del CRM y `UPDATE` de columnas concretas en `job_offers`.
-- **Login opcional**: define `APP_PASSWORD` (y un `AUTH_SECRET` aleatorio) para exigir contraseña; déjalo vacío para acceso abierto en LAN/VPN.
-- `.env` está en `.gitignore`. **Nunca** subas credenciales al repo.
-- Mantén el puerto tras un proxy con TLS y autenticación si lo publicas.
-
----
-
-## 📄 Licencia
-
-MIT — ver [LICENSE](./LICENSE). Úsalo, modifícalo y adáptalo a tu búsqueda.
+Distribuido bajo licencia [MIT](LICENSE).

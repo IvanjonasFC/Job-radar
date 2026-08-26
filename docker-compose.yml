@@ -1,0 +1,108 @@
+# ============================================================================
+#  Empleo CRM · despliegue completo con un comando:  docker compose up -d --build
+#
+#  3 piezas por defecto:  db (Postgres) + web (CRM) + worker (IA autónoma).
+#  El worker puntúa, redacta e ingesta RSS -> no necesitas n8n ni el scraper Python.
+#  Pon tu clave de IA en la web (Config -> IA) tras arrancar. Con una (p.ej. Groq) basta.
+#
+#  Perfiles opcionales:
+#    --profile scraper   añade el scraper Python (Indeed/LinkedIn) además del RSS del worker
+#    --profile backup    añade backups diarios (pg_dump) a un volumen
+#
+#  Variables (opcionales): crea un .env junto a este fichero para sobreescribir:
+#    DB_PASSWORD=...    APP_PASSWORD=...    AUTH_SECRET=...
+# ============================================================================
+name: empleo
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: empleo
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-empleo_pass_cambia_esto}
+      POSTGRES_DB: empleo
+    volumes:
+      - empleo_pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/00-schema.sql:ro   # se aplica solo al crear la BD
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U empleo -d empleo"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://empleo:${DB_PASSWORD:-empleo_pass_cambia_esto}@db:5432/empleo?options=-c%20search_path%3Dempleo
+      N8N_WEBHOOK_BASE: http://worker:8080/empleo   # los botones IA de la web llaman al worker
+      PORT: "3010"
+      APP_PASSWORD: ${APP_PASSWORD:-}               # vacío = acceso abierto (solo LAN/VPN)
+      AUTH_SECRET: ${AUTH_SECRET:-}
+    ports:
+      - "${WEB_PORT:-3010}:3010"
+
+  worker:
+    build:
+      context: ./automation/worker
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://empleo:${DB_PASSWORD:-empleo_pass_cambia_esto}@db:5432/empleo
+      PORT: "8080"
+      SCORE_INTERVAL_MIN: ${SCORE_INTERVAL_MIN:-15}
+      INGEST_RSS: ${INGEST_RSS:-1}                  # 1 = el worker ingesta RSS (sin scraper Python)
+      INGEST_INTERVAL_MIN: ${INGEST_INTERVAL_MIN:-360}
+      # Claves de IA: mejor por la web (Config -> IA). Si prefieres por entorno, descomenta:
+      # GROQ_API_KEY: ${GROQ_API_KEY:-}
+      # GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # XAI_API_KEY: ${XAI_API_KEY:-}
+
+  # --- Opcional: scraper Python (Indeed/LinkedIn). Corre y termina; prográmalo con cron externo. ---
+  scraper:
+    profiles: ["scraper"]
+    build:
+      context: ./automation/scraper
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SETTINGS_FROM_DB: "1"
+      PG_HOST: db
+      PG_PORT: "5432"
+      PG_DB: empleo
+      PG_USER: empleo
+      PG_PASS: ${DB_PASSWORD:-empleo_pass_cambia_esto}
+    restart: "no"
+
+  # --- Opcional: backup diario (pg_dump) con retención de 7 días ---
+  backup:
+    profiles: ["backup"]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${DB_PASSWORD:-empleo_pass_cambia_esto}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        while true; do
+          f="/backups/empleo_$$(date +%F_%H%M).dump";
+          pg_dump -h db -U empleo -d empleo -Fc -f "$$f" && echo "backup OK $$f" || echo "backup FALLO";
+          find /backups -name 'empleo_*.dump' -mtime +7 -delete;
+          sleep 86400;
+        done
+
+volumes:
+  empleo_pgdata:

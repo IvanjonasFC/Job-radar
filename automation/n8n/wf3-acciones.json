@@ -1,0 +1,291 @@
+{
+  "name": "WF3 Empleo · Acciones",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "empleo-hook-generar",
+        "responseMode": "onReceived",
+        "responseData": "OK, generando tu carta y CV. Te aviso por Telegram con la ruta. Puedes cerrar esta pestaña.",
+        "options": {}
+      },
+      "id": "a00-wh-gen",
+      "name": "Webhook generar",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1120, -120],
+      "webhookId": "empleo-hook-generar"
+    },
+    {
+      "parameters": {
+        "jsCode": "const id = Number($('Webhook generar').item.json.query.id) || 0;\nreturn [{ json: { id: id, selectSql: `SELECT id, title, company, location, source, url, score, verdict, keywords, reasons, description FROM empleo.job_offers WHERE id=${id};` } }];"
+      },
+      "id": "a02-prep-gen",
+      "name": "Prep generar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-880, -120]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.selectSql }}",
+        "options": {}
+      },
+      "id": "a03-db-leer",
+      "name": "DB leer oferta",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-640, -120],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const helpers = this.helpers;\nconst NL = String.fromCharCode(10);\nconst GROQ_KEY = $env['GROQ_API_KEY'] || '';\nconst GEMINI_KEY = $env['GEMINI_API_KEY'] || '';\nconst GROK_KEY = $env['XAI_API_KEY'] || '';\nconst providers = [\n  { name: 'gemini', url: 'https://cms.example.com/llm/gemini/v1beta/openai/chat/completions', key: GEMINI_KEY, model: 'gemini-3.6-flash' },\n  { name: 'groq', url: 'https://cms.example.com/llm/groq/openai/v1/chat/completions', key: GROQ_KEY, model: 'openai/gpt-oss-120b' },\n  { name: 'grok', url: 'https://cms.example.com/llm/xai/v1/chat/completions', key: GROK_KEY, model: 'grok-3' },\n  { name: 'ollama', url: 'http://ollama:11434/v1/chat/completions', key: '', model: 'qwen3:8b' }\n];\nconst SYS = ['Eres el estratega de candidaturas de el candidato. Escribes cartas de presentacion y ajustes de CV a medida de cada oferta usando UNICAMENTE los datos reales del perfil de abajo. Jamas inventes experiencia, titulos, empresas, metricas ni tecnologias que no aparezcan aqui.','','<<< PON TU PERFIL AQUI: ver automation/n8n/profile.example.md, un dato por linea >>>','== REGLAS DE ESCRITURA ==','1) Usa del perfil SOLO lo que conecta con la oferta, con detalle concreto (proyecto, tecnologia, resultado, cifra como usuarios gestionados, servicios en produccion, clientes reales). Cada afirmacion debe poder rastrearse al perfil.','2) Cuantifica con AL MENOS 2 cifras reales del perfil (p.ej. numero de usuarios gestionados, servicios en produccion, clientes reales, migracion completa a self-hosted). Nada de generalidades vacias.','3) PROHIBIDO el relleno generico y las frases plantilla: no uses emocionado, ansioso, apasionado, excelente oportunidad, encajo perfectamente, equipo altamente cualificado ni similares. Frases concretas y con sustancia.','4) Integra con naturalidad las tecnologias de la oferta que el candidato domina; no inventes las que no tenga. Es junior recien titulado: presentalo como base solida y capacidad demostrada de aprender rapido y llevar proyectos de extremo a extremo, nunca como carencia.','5) Gancho de apertura ESPECIFICO para esta empresa/puesto, no generico. Cierre con disponibilidad (remoto nacional o Asturias) y llamada a la accion.','6) Tono profesional, directo y seguro, primera persona, en el idioma de la oferta (espanol por defecto).','','== FORMATO DE SALIDA (obligatorio) ==','Devuelve EXACTAMENTE estos cuatro bloques, en este orden, sin ningun texto antes, entre o despues, y SIN usar JSON. Cada marcador ocupa su propia linea:','===ASUNTO===','(asunto del email de candidatura, max 80 caracteres, concreto)','===CARTA===','(carta en markdown, 4 parrafos separados por linea en blanco, 280-380 palabras. P1: gancho especifico para esta empresa + puesto al que aplica. P2 y P3: 2-3 logros o proyectos REALES del perfil conectados uno a uno con lo que pide la oferta, con detalle y cifras. P4: encaje + disponibilidad remoto nacional o Asturias + llamada a la accion. Sin fecha ni firma.)','===RESUMEN_CV===','(3-4 lineas para la cabecera del CV adaptadas a esta oferta: titular + SOLO el stack relevante para esta oferta que el candidato ya tenga, sin enumerar todo su stack + 1-2 pruebas reales con cifra)','===AJUSTES_CV===','(lista markdown de 5-7 ajustes ESPECIFICOS y COPIABLES. Cada item empieza por un verbo y da el TEXTO EXACTO a poner. Ejemplos del estilo exigido, cada uno un item: Anade en Experiencia (PROYECTO) - verbo de accion + logro concreto con una cifra y una tecnologia de la oferta; Sube el proyecto mas relevante al principio con su stack; Integra la keyword de la oferta en la seccion Competencias. Prohibido aconsejar en abstracto tipo resalta o mejora sin dar el texto concreto. CRITICO: solo integra keywords de la oferta que el candidato YA tenga en el perfil; NUNCA sugieras anadir como experiencia o habilidad tecnologias que NO aparezcan en el perfil (si la oferta pide p.ej. AWS o Terraform y no estan en el perfil, no las pongas). Si una tecnologia importante de la oferta le falta, ponla como UN item aparte de -a aprender-, sin falsearla como experiencia.)','No escribas nada fuera de esos cuatro bloques.','RECORDATORIO FINAL antes de escribir: NADA de emocionado, ansioso, apasionado, excelente oportunidad ni encajo perfectamente; incluye minimo 2 cifras reales del perfil; cada ajuste de CV debe traer el texto exacto a copiar.'].join(NL);\nconst o = $json;\nconst userText = 'OFERTA: ' + (o.title||'') + ' en ' + (o.company||'') + ' (' + (o.location||'') + ', ' + (o.modalidad||'') + ')' + NL + 'ENCAJE IA: ' + (Number(o.score)||0) + '/100 ' + (o.verdict||'') + NL + 'TECNOLOGIAS CLAVE: ' + (Array.isArray(o.keywords)?o.keywords.join(', '):(o.keywords||'')) + NL + 'DESCRIPCION:' + NL + (o.description||'').slice(0,3000);\nlet content = '', used = 'none';\nfor (const p of providers) {\n  if (p.name !== 'ollama' && !p.key) continue;\n  try {\n    const headers = { 'Content-Type': 'application/json' };\n    if (p.key) headers['Authorization'] = 'Bearer ' + p.key;\n    const res = await helpers.httpRequest({ method: 'POST', url: p.url, headers: headers, body: { model: p.model, messages: [{ role: 'system', content: SYS }, { role: 'user', content: userText }], temperature: 0.6, max_tokens: 4096 }, json: true, timeout: 120000 });\n    const c = (res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content) || (res.message && res.message.content) || '';\n    if (c && c.trim().length > 400) { content = c; used = p.name; break; }\n    if (c && !content) { content = c; used = p.name; }\n  } catch (e) {}\n}\nif (used === 'none') {\n  try { await helpers.httpRequest({ method: 'POST', url: 'https://cms.example.com/tgapi/botYOUR_TELEGRAM_BOT_TOKEN/sendMessage', body: { chat_id: 'YOUR_TELEGRAM_CHAT_ID', text: 'Empleo IA: no se pudo generar la carta/CV, todas las IA caidas o sin credito.' }, json: true }); } catch (e) {}\n}\nreturn [{ json: { content: content, _ia: used } }];"
+      },
+      "id": "a04-gen-ia",
+      "name": "Generar carta+CV (multi-IA)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, -120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const offer = ($('DB leer oferta').first() || { json: {} }).json;\nconst j = $json;\nlet raw = (j.content) || (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || (j.message && j.message.content) || ``;\nlet gen = { asunto:``, carta_md:``, resumen_cv:``, cv_ajustes_md:`` };\nconst grab = (name) => { const tag = `===`+name+`===`; const s = raw.indexOf(tag); if (s < 0) return ``; const from = s + tag.length; let end = raw.length; [`ASUNTO`,`CARTA`,`RESUMEN_CV`,`AJUSTES_CV`].forEach(n => { if (n!==name) { const p = raw.indexOf(`===`+n+`===`, from); if (p>=0 && p<end) end = p; } }); return raw.slice(from, end).trim(); };\ngen.asunto = grab(`ASUNTO`); gen.carta_md = grab(`CARTA`); gen.resumen_cv = grab(`RESUMEN_CV`); gen.cv_ajustes_md = grab(`AJUSTES_CV`);\nif (!gen.carta_md) { try { const a = raw.indexOf(`{`); const b = raw.lastIndexOf(`}`); const o2 = JSON.parse(a>=0&&b>a?raw.slice(a,b+1):raw); gen.asunto = gen.asunto||o2.asunto||``; gen.carta_md = o2.carta_md||``; gen.resumen_cv = gen.resumen_cv||o2.resumen_cv||``; gen.cv_ajustes_md = o2.cv_ajustes_md||``; } catch(e){} }\nif (!gen.carta_md) { const _nl = String.fromCharCode(10); gen.carta_md = `(no se pudo interpretar la salida) _ia=`+String(j._ia||`?`)+_nl+_nl+`--- RAW (diagnostico, primeros 1800 car) ---`+_nl+String(raw).slice(0,1800); }\nif (!gen.cv_ajustes_md) gen.cv_ajustes_md = `(no generados)`;\nconst today = new Date().toISOString().slice(0,10);\nconst slugify = s => (s||``).toString().replace(/[^a-zA-Z0-9]+/g,`-`).replace(/^-+|-+$/g,``).toLowerCase().slice(0,50);\nconst slug = today + `-` + slugify(offer.company||`empresa`) + `-` + slugify(offer.title||`oferta`);\nconst clean = s => String(s||``).split(`/`).join(`-`).split(`:`).join(`-`).trim().slice(0,70);\nconst fileName = (clean(offer.company||`Empresa`) + ` - ` + clean(offer.title||`Oferta`)).slice(0,120) + `.md`;\nconst folderPath = `/vault/Ofertas/01_Inbox/` + slug;\nconst filePath = folderPath + `/` + fileName;\nconst kwStr = Array.isArray(offer.keywords)?offer.keywords.join(`, `):String(offer.keywords||``);\nconst NL = String.fromCharCode(10);\nconst yv = s => `'` + String(s==null?``:s).split(`'`).join(``).split(NL).join(` `).trim() + `'`;\nconst B64 = s => Buffer.from(String(s),`utf8`).toString(`base64`);\nconst fm = [`---`,`estado: por_revisar`,`empresa: `+yv(offer.company),`puesto: `+yv(offer.title),`ubicacion: `+yv(offer.location),`modalidad: `+yv(offer.modalidad),`fuente: `+yv(offer.source),`url: `+yv(offer.url),`match_score: `+(Number(offer.score)||0),`veredicto: `+yv(offer.verdict),`fecha_deteccion: `+today,`fecha_postulacion: `,`fecha_respuesta: `,`fecha_entrevista: `,`proxima_accion: `,`fecha_proxima: `,`notas: `,`offer_id: `+(Number(offer.id)||0),`tags: [empleo, inbox]`,`---`,``].join(NL);\nconst indice = fm + [`# `+(offer.title||`Oferta`)+` - `+(offer.company||``),``,`- **Empresa:** `+(offer.company||`-`),`- **Ubicacion:** `+(offer.location||`-`)+` (`+(offer.modalidad||`-`)+`)`,`- **Encaje:** `+(Number(offer.score)||0)+`/100 - `+(offer.verdict||``),`- **Enlace:** `+(offer.url||`-`),``,`## Por que encaja`,(offer.reasons||``),``,`## Tecnologias`,kwStr,``,`## Documentos`,`- [[Carta de presentacion]]`,`- [[Ajustes CV]]`,``,`---`,`### Descripcion (recorte)`,(offer.description||``).slice(0,2500)].join(NL);\nconst carta = [`# Carta de presentacion`,``,`**Para:** `+(offer.company||``)+`  |  **Puesto:** `+(offer.title||``),`**Asunto:** `+(gen.asunto||((offer.title||`Candidatura`)+` - el candidato `)),`**Fecha:** `+today,``,`---`,``,(gen.carta_md||`(no generada)`),``,`---`,`el candidato  |  tu@email.com  |  TU_TELEFONO  |  example.com  |  github.com/YOUR_USER`].join(NL);\nconst cvtips = [`# Ajustes de CV para esta oferta`,``,`**`+(offer.company||``)+`** - `+(offer.title||``),``,`---`,``,`## Resumen profesional sugerido`,(gen.resumen_cv||`(no generado)`),``,`## Ajustes a aplicar`,(gen.cv_ajustes_md||`(no generados)`)].join(NL);\nconst files = [ { name: `_Oferta.md`, contentB64: B64(indice) }, { name: `Carta de presentacion.md`, contentB64: B64(carta) }, { name: `Ajustes CV.md`, contentB64: B64(cvtips) } ];\nconst esc = v => `'` + String(v==null?``:v).replace(/'/g,`''`) + `'`;\nconst idNum = Number(offer.id)||0;\nconst indicePath = folderPath + `/_Oferta.md`;\nconst cartaPath = folderPath + `/Carta de presentacion.md`;\nconst gsql = `INSERT INTO empleo.generated (offer_id, asunto, carta_md, resumen_cv, cv_ajustes_md, ia, updated_at) VALUES (`+idNum+`, `+esc(gen.asunto)+`, `+esc(gen.carta_md)+`, `+esc(gen.resumen_cv)+`, `+esc(gen.cv_ajustes_md)+`, `+esc(j._ia)+`, now()) ON CONFLICT (offer_id) DO UPDATE SET asunto=EXCLUDED.asunto, carta_md=EXCLUDED.carta_md, resumen_cv=EXCLUDED.resumen_cv, cv_ajustes_md=EXCLUDED.cv_ajustes_md, ia=EXCLUDED.ia, updated_at=now();`;\nconst updateSql = `UPDATE empleo.job_offers SET status='generada', vault_path=`+esc(indicePath)+`, cv_path=`+esc(cartaPath)+`, generated_at=now(), updated_at=now() WHERE id=`+idNum+`;` + gsql;\nconst msg = `Carta y CV generados (`+(Number(offer.score)||0)+`/100)`+NL+(offer.title||`Oferta`)+` - `+(offer.company||``)+NL+(offer.location||``)+` - `+(offer.modalidad||``)+NL+folderPath;\nreturn [{ json: { folderPath: folderPath, files: files, updateSql: updateSql, msg: msg, id: offer.id } }];"
+      },
+      "id": "a05-build",
+      "name": "Construir MD",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-160, -120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nfs.mkdirSync($json.folderPath, { recursive: true });\nfor (const f of ($json.files || [])) { fs.writeFileSync($json.folderPath + '/' + f.name, Buffer.from(f.contentB64, 'base64')); }\nreturn [{ json: $json }];"
+      },
+      "id": "a06-fs",
+      "name": "Guardar MD (fs)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [80, -120],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.updateSql }}",
+        "options": {}
+      },
+      "id": "a07-db-gen",
+      "name": "DB set generada",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [320, -120],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cms.example.com/tgapi/botYOUR_TELEGRAM_BOT_TOKEN/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"YOUR_TELEGRAM_CHAT_ID\",\n  \"text\": {{ JSON.stringify($('Construir MD').item.json.msg || 'Carta y CV generados') }},\n  \"disable_web_page_preview\": true\n}",
+        "options": {}
+      },
+      "id": "a08-tg-gen",
+      "name": "Avisar generado (tgapi)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [560, -120],
+      "onError": "continueRegularOutput"
+    },
+
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "empleo-hook-aplicar",
+        "responseMode": "onReceived",
+        "responseData": "OK, marcada como aplicada y movida a 02_Postuladas. Te confirmo por Telegram. Puedes cerrar esta pestaña.",
+        "options": {}
+      },
+      "id": "b00-wh-apl",
+      "name": "Webhook aplicar",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1120, 160],
+      "webhookId": "empleo-hook-aplicar"
+    },
+    {
+      "parameters": {
+        "jsCode": "const id = Number($('Webhook aplicar').item.json.query.id) || 0;\nreturn [{ json: { id: id, selectSql: `SELECT id, url, company, title, location, vault_path FROM empleo.job_offers WHERE id=${id};` } }];"
+      },
+      "id": "b02-prep-apl",
+      "name": "Prep aplicar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-880, 160]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.selectSql }}",
+        "options": {}
+      },
+      "id": "b03-db-leer-apl",
+      "name": "DB leer aplicar",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-640, 160],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst offer = $('DB leer aplicar').item.json;\nconst id = Number(offer.id) || 0;\nconst NL = String.fromCharCode(10);\nconst vp = offer.vault_path || ``;\nlet newPath = vp;\nlet info = ``;\ntry {\n  if (!vp) { info = `sin vault_path en BD (no se genero?)`; }\n  else if (vp.indexOf('/01_Inbox/') === -1) { info = `no esta en 01_Inbox: ` + vp; }\n  else {\n    const oldFolder = vp.slice(0, vp.lastIndexOf('/'));\n    const newFolder = oldFolder.split('/01_Inbox/').join('/02_Postuladas/');\n    if (!fs.existsSync(oldFolder)) { info = `carpeta no encontrada: ` + oldFolder; }\n    else {\n      fs.mkdirSync(newFolder.slice(0, newFolder.lastIndexOf('/')), { recursive: true });\n      try { fs.renameSync(oldFolder, newFolder); } catch (e1) { fs.cpSync(oldFolder, newFolder, { recursive: true }); fs.rmSync(oldFolder, { recursive: true, force: true }); }\n      newPath = newFolder + '/' + vp.slice(vp.lastIndexOf('/')+1);\n      const hoy = new Date().toISOString().slice(0,10);\n      try {\n        const idx = newFolder + '/_Oferta.md';\n        const target = fs.existsSync(idx) ? idx : newPath;\n        const txt = fs.readFileSync(target, 'utf8');\n        const lines = txt.split(NL).map(L => L.indexOf('estado:') === 0 ? 'estado: postulada' : (L.indexOf('fecha_postulacion:') === 0 ? 'fecha_postulacion: ' + hoy : L));\n        fs.writeFileSync(target, lines.join(NL));\n      } catch (e2) {}\n      info = `movida a 02_Postuladas`;\n    }\n  }\n} catch (e) { info = `ERROR al mover: ` + (e && e.message ? e.message : String(e)); }\nconst esc = v => `'` + String(v == null ? `` : v).replace(/'/g, `''`) + `'`;\nconst sql = `INSERT INTO empleo.applications (offer_id,url,company,title,channel,stage,applied_at,proxima_accion,fecha_proxima,updated_at) SELECT id,url,company,title,'telegram','postulada',now(),'Hacer seguimiento (sin respuesta)',(current_date + 7),now() FROM empleo.job_offers WHERE id=` + id + ` AND NOT EXISTS (SELECT 1 FROM empleo.applications WHERE offer_id=` + id + `); UPDATE empleo.applications SET applied_at=COALESCE(applied_at,now()), fecha_proxima=COALESCE(fecha_proxima,(current_date + 7)), proxima_accion=COALESCE(NULLIF(proxima_accion,''),'Hacer seguimiento (sin respuesta)'), updated_at=now() WHERE offer_id=` + id + `; UPDATE empleo.job_offers SET status='aplicada', applied_at=now(), vault_path=` + esc(newPath) + `, updated_at=now() WHERE id=` + id + `;`;\nconst msg = `Aplicada: ` + (offer.title||`Oferta`) + ` - ` + (offer.company||``) + NL + `Ubicacion: ` + (offer.location||``) + NL + info;\nreturn [{ json: { updateSql: sql, msg: msg } }];"
+      },
+      "id": "b04-mover-apl",
+      "name": "Mover a Postuladas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 160],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.updateSql }}",
+        "options": {}
+      },
+      "id": "b05-db-apl",
+      "name": "DB aplicar",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-160, 160],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cms.example.com/tgapi/botYOUR_TELEGRAM_BOT_TOKEN/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"YOUR_TELEGRAM_CHAT_ID\",\n  \"text\": {{ JSON.stringify($('Mover a Postuladas').item.json.msg || 'Oferta aplicada') }},\n  \"disable_web_page_preview\": true\n}",
+        "options": {}
+      },
+      "id": "b06-tg-apl",
+      "name": "Avisar aplicada (tgapi)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [80, 160],
+      "onError": "continueRegularOutput"
+    },
+
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "empleo-hook-descartar",
+        "responseMode": "onReceived",
+        "responseData": "Oferta descartada. Te confirmo por Telegram. Puedes cerrar esta pestaña.",
+        "options": {}
+      },
+      "id": "c00-wh-desc",
+      "name": "Webhook descartar",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1120, 440],
+      "webhookId": "empleo-hook-descartar"
+    },
+    {
+      "parameters": {
+        "jsCode": "const id = Number($('Webhook descartar').item.json.query.id) || 0;\nreturn [{ json: { id: id, selectSql: `SELECT id, title, company, vault_path FROM empleo.job_offers WHERE id=${id};` } }];"
+      },
+      "id": "c02-prep-desc",
+      "name": "Prep descartar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-880, 440]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.selectSql }}",
+        "options": {}
+      },
+      "id": "c03-db-leer-desc",
+      "name": "DB leer descartar",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-640, 440],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst offer = $('DB leer descartar').item.json;\nconst id = Number(offer.id) || 0;\nconst NL = String.fromCharCode(10);\nconst vp = offer.vault_path || ``;\nlet newPath = vp;\nlet info = ``;\ntry {\n  const src = vp.indexOf('/01_Inbox/') !== -1 ? '/01_Inbox/' : (vp.indexOf('/02_Postuladas/') !== -1 ? '/02_Postuladas/' : null);\n  if (!vp) { info = `sin vault_path en BD`; }\n  else if (!src) { info = `no esta en Inbox/Postuladas: ` + vp; }\n  else {\n    const oldFolder = vp.slice(0, vp.lastIndexOf('/'));\n    const newFolder = oldFolder.split(src).join('/03_Descartadas/');\n    if (!fs.existsSync(oldFolder)) { info = `carpeta no encontrada: ` + oldFolder; }\n    else {\n      fs.mkdirSync(newFolder.slice(0, newFolder.lastIndexOf('/')), { recursive: true });\n      try { fs.renameSync(oldFolder, newFolder); } catch (e1) { fs.cpSync(oldFolder, newFolder, { recursive: true }); fs.rmSync(oldFolder, { recursive: true, force: true }); }\n      newPath = newFolder + '/' + vp.slice(vp.lastIndexOf('/')+1);\n      info = `movida a 03_Descartadas`;\n    }\n  }\n} catch (e) { info = `ERROR al mover: ` + (e && e.message ? e.message : String(e)); }\nconst esc = v => `'` + String(v == null ? `` : v).replace(/'/g, `''`) + `'`;\nconst sql = `UPDATE empleo.job_offers SET status='descartada', vault_path=` + esc(newPath) + `, updated_at=now() WHERE id=` + id + `;`;\nconst msg = `Descartada: ` + (offer.title||`Oferta`) + ` - ` + (offer.company||``) + NL + info;\nreturn [{ json: { updateSql: sql, msg: msg } }];"
+      },
+      "id": "c04-mover-desc",
+      "name": "Mover a Descartadas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 440],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.updateSql }}",
+        "options": {}
+      },
+      "id": "c05-db-desc",
+      "name": "DB descartar",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-160, 440],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cms.example.com/tgapi/botYOUR_TELEGRAM_BOT_TOKEN/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"YOUR_TELEGRAM_CHAT_ID\",\n  \"text\": {{ JSON.stringify($('Mover a Descartadas').item.json.msg || 'Oferta descartada') }},\n  \"disable_web_page_preview\": true\n}",
+        "options": {}
+      },
+      "id": "c06-tg-desc",
+      "name": "Avisar descartada (tgapi)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [80, 440],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook generar": { "main": [[{ "node": "Prep generar", "type": "main", "index": 0 }]] },
+    "Prep generar": { "main": [[{ "node": "DB leer oferta", "type": "main", "index": 0 }]] },
+    "DB leer oferta": { "main": [[{ "node": "Generar carta+CV (multi-IA)", "type": "main", "index": 0 }]] },
+    "Generar carta+CV (multi-IA)": { "main": [[{ "node": "Construir MD", "type": "main", "index": 0 }]] },
+    "Construir MD": { "main": [[{ "node": "Guardar MD (fs)", "type": "main", "index": 0 }]] },
+    "Guardar MD (fs)": { "main": [[{ "node": "DB set generada", "type": "main", "index": 0 }]] },
+    "DB set generada": { "main": [[{ "node": "Avisar generado (tgapi)", "type": "main", "index": 0 }]] },
+    "Webhook aplicar": { "main": [[{ "node": "Prep aplicar", "type": "main", "index": 0 }]] },
+    "Prep aplicar": { "main": [[{ "node": "DB leer aplicar", "type": "main", "index": 0 }]] },
+    "DB leer aplicar": { "main": [[{ "node": "Mover a Postuladas", "type": "main", "index": 0 }]] },
+    "Mover a Postuladas": { "main": [[{ "node": "DB aplicar", "type": "main", "index": 0 }]] },
+    "DB aplicar": { "main": [[{ "node": "Avisar aplicada (tgapi)", "type": "main", "index": 0 }]] },
+    "Webhook descartar": { "main": [[{ "node": "Prep descartar", "type": "main", "index": 0 }]] },
+    "Prep descartar": { "main": [[{ "node": "DB leer descartar", "type": "main", "index": 0 }]] },
+    "DB leer descartar": { "main": [[{ "node": "Mover a Descartadas", "type": "main", "index": 0 }]] },
+    "Mover a Descartadas": { "main": [[{ "node": "DB descartar", "type": "main", "index": 0 }]] },
+    "DB descartar": { "main": [[{ "node": "Avisar descartada (tgapi)", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Madrid",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": []
+}

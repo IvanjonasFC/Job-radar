@@ -1,0 +1,15 @@
+{
+  "name": "empleo-worker",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Worker autónomo del CRM de empleo: puntúa ofertas con IA, genera cartas/CV y prep de entrevista, e ingesta RSS. Alternativa a n8n (mismos endpoints).",
+  "scripts": {
+    "start": "node src/server.js",
+    "score": "node src/cli.js score",
+    "ingest": "node src/cli.js ingest"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "pg": "^8.13.0"
+  }
+}

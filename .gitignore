@@ -1,0 +1,32 @@
+# Dependencias
+node_modules/
+.pnpm-store/
+
+# Build de Astro
+dist/
+.astro/
+
+# Entorno y secretos (NUNCA subir)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# SO / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Backups de edición
+*.bak
+
+# Dumps de base de datos (servicio backup del compose)
+backups/
+*.dump
+
+# Temporales del montaje (FUSE) — no subir
+.fuse_hidden*

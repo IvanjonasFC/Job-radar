@@ -1,0 +1,35 @@
+# Ejemplo genérico para desplegar el CRM con Docker.
+# Copia a `docker-compose.yml`, ajusta y `docker compose up -d`.
+# Incluye un Postgres opcional; si ya tienes uno, borra el servicio `db` y apunta DATABASE_URL a él.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: empleo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: empleo
+      POSTGRES_USER: empleo_admin
+      POSTGRES_PASSWORD: change_me_admin
+    volumes:
+      - empleo_pg:/var/lib/postgresql/data
+      # aplica el esquema al arrancar la primera vez:
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  web:
+    build:
+      context: .
+    image: empleo-web:latest
+    container_name: empleo-web
+    restart: unless-stopped
+    env_file: ./.env      # DATABASE_URL, N8N_WEBHOOK_BASE
+    depends_on:
+      - db
+    ports:
+      - "127.0.0.1:3010:3010"   # ponlo tras un reverse proxy (Caddy/Nginx) con TLS
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  empleo_pg:

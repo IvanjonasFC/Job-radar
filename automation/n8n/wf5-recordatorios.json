@@ -1,0 +1,58 @@
+{
+  "name": "WF5 Recordatorios",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "r00-manual",
+      "name": "Probar ahora",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-720, 180]
+    },
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "cronExpression", "expression": "30 8 * * *" } ] }
+      },
+      "id": "r01-cron",
+      "name": "Cada dia 08:30",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-720, 20]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst NL = String.fromCharCode(10);\nconst base = '/vault/Ofertas';\nconst dirs = ['02_Postuladas','01_Inbox'];\nconst today = new Date(); today.setHours(0,0,0,0);\nconst SQ = String.fromCharCode(39);\nconst parseFM = (txt) => { const m = {}; const a = txt.indexOf('---'); if (a<0) return m; const b = txt.indexOf('---', a+3); if (b<0) return m; const block = txt.slice(a+3, b); for (const line of block.split(NL)) { const i = line.indexOf(':'); if (i<0) continue; const k = line.slice(0,i).trim(); let v = line.slice(i+1).trim(); if (v.length>=2 && v.charCodeAt(0)===39 && v.charCodeAt(v.length-1)===39) v = v.slice(1,-1); m[k]=v; } return m; };\nconst walk = (d) => { let out=[]; let items=[]; try{ items=fs.readdirSync(d,{withFileTypes:true}); }catch(e){ return out; } for(const it of items){ const p=d+'/'+it.name; if(it.isDirectory()) out=out.concat(walk(p)); else if(it.name==='_Oferta.md') out.push(p); } return out; };\nconst files = [];\nfor (const dd of dirs) files.push.apply(files, walk(base+'/'+dd));\nconst days = (s) => { if(!s) return null; const d=new Date(String(s).trim()+'T00:00:00'); if(isNaN(d.getTime())) return null; return Math.round((d-today)/86400000); };\nconst alerts = [];\nfor (const f of files) { let txt=''; try{ txt=fs.readFileSync(f,'utf8'); }catch(e){ continue; } const fm = parseFM(txt); const emp = fm.empresa||'?'; const pue = fm.puesto||'?'; const de = days(fm.fecha_entrevista); if (de!==null && de>=0 && de<=1) alerts.push((de===0?'ENTREVISTA HOY':'ENTREVISTA MANANA')+': '+emp+' - '+pue); const dp = days(fm.fecha_proxima); if (dp!==null && dp<=0 && (fm.proxima_accion||'')) alerts.push('PENDIENTE: '+fm.proxima_accion+' - '+emp); const dpost = days(fm.fecha_postulacion); if ((fm.estado||'')==='postulada' && dpost!==null && dpost<=-7 && !(fm.fecha_respuesta||'') && !(fm.fecha_proxima||'')) alerts.push('SIN RESPUESTA '+Math.abs(dpost)+' dias: '+emp+' ('+pue+') - seguimiento?'); }\nif (!alerts.length) return [];\nconst text = 'Recordatorios de candidaturas'+NL+NL+alerts.join(NL);\nreturn [{ json: { text: text } }];"
+      },
+      "id": "r02-eval",
+      "name": "Revisar recordatorios",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-420, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cms.example.com/tgapi/botYOUR_TELEGRAM_BOT_TOKEN/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"YOUR_TELEGRAM_CHAT_ID\",\n  \"text\": {{ JSON.stringify($json.text) }},\n  \"disable_web_page_preview\": true\n}",
+        "options": {}
+      },
+      "id": "r03-tg",
+      "name": "Avisar (tgapi)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-160, 100],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Probar ahora": { "main": [[{ "node": "Revisar recordatorios", "type": "main", "index": 0 }]] },
+    "Cada dia 08:30": { "main": [[{ "node": "Revisar recordatorios", "type": "main", "index": 0 }]] },
+    "Revisar recordatorios": { "main": [[{ "node": "Avisar (tgapi)", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "Europe/Madrid" }
+}

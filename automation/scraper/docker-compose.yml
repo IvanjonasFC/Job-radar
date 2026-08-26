@@ -1,0 +1,29 @@
+services:
+  empleo-scraper:
+    build:
+      context: .
+      network: host        # el build sale a internet por la red del host (los bridges Docker estan bloqueados por el firewall)
+    image: empleo-scraper:latest
+    container_name: empleo-scraper
+    network_mode: host     # runtime en la red del host: la unica con egress TLS (igual que Caddy). Los bridges dan TLSV1_ALERT.
+    environment:
+      # --- Base de datos (obligatorio en .env) ---
+      PG_HOST: ${PG_HOST}            # IP del contenedor Postgres en su bridge (en red host no vale el nombre)
+      PG_PASS: ${PG_PASS}
+      PG_PORT: ${PG_PORT:-5432}
+      PG_DB: ${PG_DB:-empleo}
+      PG_USER: ${PG_USER:-empleo_worker}
+      # --- Cobertura (defaults = Espana IT; sobreescribe en .env) ---
+      COUNTRIES: ${COUNTRIES:-spain}
+      SITES: ${SITES:-indeed,linkedin}
+      WORKERS: ${WORKERS:-4}
+      SEARCH_TERMS: ${SEARCH_TERMS:-desarrollador,programador,full stack developer,backend developer,frontend developer,python developer,react developer,angular developer,node developer,java developer,php developer,.net developer,javascript developer,devops,administrador de sistemas,tecnico de sistemas,soporte informatico,helpdesk,data engineer,ingeniero de software,cloud engineer,flutter developer,informatico,tecnico informatico,administrador de redes,desarrollador junior,programador junior}
+      HOME_COUNTRY: ${HOME_COUNTRY:-spain}
+      HOME_LOCATION: ${HOME_LOCATION:-Asturias, Spain}
+      LOCAL_CITIES: ${LOCAL_CITIES:-asturias,gijon,gijón,oviedo,aviles,avilés,langreo,mieres,siero}
+      FILTER: ${FILTER:-it_local_remote}
+      RESULTS_WANTED: ${RESULTS_WANTED:-40}
+      HOURS_OLD: ${HOURS_OLD:-168}
+      PROXIES: ${PROXIES:-}      # opcional: reactivar Google/InfoJobs con otra IP (residencial)
+      RSS_FEEDS: ${RSS_FEEDS:-https://weworkremotely.com/categories/remote-programming-jobs.rss,https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss}
+    restart: "no"

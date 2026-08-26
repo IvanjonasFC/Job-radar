@@ -1,0 +1,283 @@
+---
+import Base from '../layouts/Base.astro';
+import { getConfig, matchPref, esLocal, DEFAULTS, SITE_OPTIONS, COUNTRY_OPTIONS, ROLE_OPTIONS, HOURS_OPTIONS } from '../lib/config';
+import { sql } from '../lib/db';
+
+const cfg = await getConfig();
+const guardado = Astro.url.searchParams.get('guardado');
+const error = Astro.url.searchParams.get('error');
+
+// KPIs de impacto: cómo queda TU búsqueda con la config guardada (datos en vivo de la BD).
+// Se recalculan al guardar (la página recarga con ?guardado=1). Robustos: si algo falla, se ocultan.
+let stat: { activas: number; encajan: number; zona: number; top: number; horas: number | null } | null = null;
+try {
+  const rows = await sql<any[]>`
+    SELECT location, modalidad, score, status
+    FROM empleo.job_offers WHERE status NOT IN ('caducada','descartada')`;
+  const fr = await sql<any[]>`SELECT round(EXTRACT(EPOCH FROM (now() - max(first_seen))) / 3600)::int AS h FROM empleo.job_offers`;
+  stat = {
+    activas: rows.length,
+    encajan: rows.filter((r) => matchPref(r, cfg)).length,
+    zona: rows.filter((r) => esLocal(r.location, r.modalidad, cfg)).length,
+    top: rows.filter((r) => (r.score ?? 0) >= cfg.min_score_cola && ['evaluada', 'notificada', 'generada'].includes(r.status)).length,
+    horas: fr[0]?.h ?? null,
+  };
+} catch { stat = null; }
+const perfilVacio = !cfg.perfil || cfg.perfil.trim().length < 20;
+const frescoTxt = stat?.horas == null ? '—' : stat.horas < 1 ? '<1 h' : stat.horas < 48 ? `${stat.horas} h` : `${Math.round(stat.horas / 24)} d`;
+const frescoColor = stat?.horas == null ? 'var(--color-muted)' : stat.horas <= 36 ? 'var(--color-good)' : stat.horas <= 72 ? 'var(--color-mid)' : 'var(--color-danger)';
+const modOpts = [
+  { v: 'presencial', l: 'Presencial' },
+  { v: 'hibrido', l: 'Híbrido' },
+  { v: 'remoto', l: 'Remoto' },
+];
+const extraTerms = cfg.search_terms.filter((t) => !ROLE_OPTIONS.includes(t));
+const countryVals = COUNTRY_OPTIONS.map((c) => c.v);
+const extraCountries = cfg.countries.filter((c) => !countryVals.includes(c));
+const hoursHasOpt = HOURS_OPTIONS.some((h) => h.v === cfg.hours_old);
+const CLABEL: Record<string, string> = { spain: 'Spain', portugal: 'Portugal', france: 'France', germany: 'Germany', italy: 'Italy', uk: 'UK', ireland: 'Ireland', netherlands: 'Netherlands', mexico: 'Mexico', argentina: 'Argentina', colombia: 'Colombia', chile: 'Chile', peru: 'Peru', usa: 'USA' };
+const primaryC = cfg.countries[0] || 'spain';
+const clabel = CLABEL[primaryC] || (primaryC.charAt(0).toUpperCase() + primaryC.slice(1));
+const derivedLoc = cfg.local_region ? `${cfg.local_region}, ${clabel}` : clabel;
+
+// Estado (enmascarado) de las claves de IA guardadas en la BD. La clave completa NUNCA
+// llega al navegador: solo se renderiza un resumen seguro (prefijo…sufijo). value="" siempre.
+const maskKey = (k) => {
+  const s = String(k || '').trim();
+  if (!s) return null;
+  return s.length >= 12 ? `${s.slice(0, 4)}…${s.slice(-4)}` : '•••• guardada';
+};
+const iaFields = [
+  { name: 'ia_groq_key', label: 'Groq API key', hint: 'gsk_…', saved: maskKey(cfg.ia?.groq_key) },
+  { name: 'ia_gemini_key', label: 'Google Gemini API key', hint: 'AQ.… / AIza…', saved: maskKey(cfg.ia?.gemini_key) },
+  { name: 'ia_xai_key', label: 'xAI (Grok) API key', hint: 'xai-…', saved: maskKey(cfg.ia?.xai_key) },
+];
+
+const inp = 'width:100%; padding:9px 11px; background:#14181f; border:1px solid var(--color-border); border-radius:8px; color:var(--color-text); box-sizing:border-box;';
+const lbl = 'font-size:.78rem; color:var(--color-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:.04em;';
+const chk = 'display:flex; align-items:center; gap:8px; font-size:.88rem; cursor:pointer;';
+const cbox = 'accent-color:var(--color-primary); width:16px; height:16px; flex:0 0 auto;';
+const secTitle = 'display:flex; align-items:center; gap:10px; margin:0 0 4px; font-size:1.05rem;';
+const num = 'display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:linear-gradient(135deg,var(--color-primary),var(--color-primary-2)); color:#fff; font-size:.82rem; font-weight:700; flex:0 0 auto;';
+const hr = 'border:none; border-top:1px solid var(--color-border); margin:16px 0;';
+---
+<Base title="Configuración">
+  <div>
+    <h1 style="margin:0 0 4px;">Configuración del sistema</h1>
+    <p style="color:var(--color-muted); margin:0 0 20px;">Define qué ofertas te interesan y de dónde sacarlas. Se guarda en la base de datos; la web lo aplica al instante y el scraper y n8n lo leen de ahí.</p>
+
+    {stat && (
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:22px;">
+        {[
+          { l: 'Encajan con tu config', v: stat.encajan, s: `de ${stat.activas} activas`, accent: true, tip: 'Ofertas activas que cumplen tu zona + modalidades. Cambia la sección 1 y mira cómo varía.', hint: '/ofertas?encaja=1' },
+          { l: `De tu zona (${cfg.local_region || 'local'})`, v: stat.zona, s: 'presencial/híbrido viable', tip: 'Ofertas en las ciudades que marcaste como locales.', hint: '/ofertas' },
+          { l: `Score ≥${cfg.min_score_cola} sin postular`, v: stat.top, s: 'listas para aplicar', tip: 'Suben o bajan según el score mínimo de la sección 2.', hint: `/ofertas?min=${cfg.min_score_cola}&sort=encaje` },
+          { l: 'Última oferta', v: frescoTxt, s: 'entró hace', color: frescoColor, tip: 'Frescura del scraper. Si es alto, revisa que el scraper corra (y sus portales).' },
+        ].map((k) => {
+          const Tag = k.hint ? 'a' : 'div';
+          return (
+            <Tag href={k.hint} class="card" style="padding:16px 18px; display:block;" title={k.tip}>
+              <div style="color:var(--color-muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.06em;">{k.l}</div>
+              <div style={`font-family:var(--font-display); font-size:2rem; font-weight:700; line-height:1.15; margin-top:4px; ${k.color ? `color:${k.color};` : k.accent ? 'background:linear-gradient(135deg,var(--color-primary),var(--color-primary-2)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;' : 'color:var(--color-text);'}`}>{k.v}</div>
+              <div style="color:var(--color-muted); font-size:.76rem;">{k.s}</div>
+            </Tag>
+          );
+        })}
+      </div>
+    )}
+    {stat && stat.encajan === 0 && stat.activas > 0 && (
+      <div class="card" style="padding:12px 16px; margin-bottom:16px; border-color:var(--color-mid); color:var(--color-mid); font-size:.86rem;">
+        ⚠ Con esta config <strong>ninguna</strong> de las {stat.activas} ofertas activas encaja. Afloja la zona o las modalidades (sección 1) para no quedarte sin cola.
+      </div>
+    )}
+
+    {guardado && <div class="card" style="padding:12px 16px; margin-bottom:16px; border-color:var(--color-good); color:var(--color-good);">✓ Configuración guardada.</div>}
+    {error && (
+      <div class="card" style="padding:14px 16px; margin-bottom:16px; border-color:var(--color-danger);">
+        <strong style="color:var(--color-danger);">No se pudo guardar.</strong>
+        <p style="color:var(--color-muted); margin:8px 0 0; font-size:.86rem;">Falta crear la tabla de ajustes. Ejecútalo una vez en tu Postgres (como admin):</p>
+        <pre style="background:var(--color-surface-2); border:1px solid var(--color-border); border-radius:8px; padding:10px; overflow:auto; font-size:.78rem; margin:8px 0 0;">CREATE TABLE IF NOT EXISTS empleo.settings (id smallint PRIMARY KEY DEFAULT 1, data jsonb NOT NULL DEFAULT '{}'::jsonb, updated_at timestamptz NOT NULL DEFAULT now(), CONSTRAINT settings_single_row CHECK (id=1));
+INSERT INTO empleo.settings (id,data) VALUES (1,'{}') ON CONFLICT (id) DO NOTHING;
+GRANT SELECT, INSERT, UPDATE ON empleo.settings TO empleo_web;</pre>
+      </div>
+    )}
+
+    <form method="post" action="/api/config" style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; align-items:start;">
+
+      <!-- 1 · Zona y modalidades -->
+      <section class="card" style="padding:20px;">
+        <h3 style={secTitle}><span style={num}>1</span> Tu zona y modalidades</h3>
+        <p style="color:var(--color-muted); font-size:.82rem; margin:0 0 16px;">Dónde te quieres centrar. En tu zona puedes aceptar cualquier modalidad; fuera, normalmente solo remoto.</p>
+        <div style="display:grid; grid-template-columns:1fr 2fr; gap:14px;">
+          <div>
+            <label style={lbl}>Etiqueta de tu zona</label>
+            <input type="text" name="local_region" value={cfg.local_region} placeholder="Asturias" style={inp} />
+          </div>
+          <div>
+            <label style={lbl}>Ciudades / regiones locales</label>
+            <input type="text" name="local_cities" value={cfg.local_cities.join(', ')} placeholder="asturias, gijon, oviedo, aviles" style={inp} />
+          </div>
+        </div>
+        <hr style={hr} />
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px;">
+          <div>
+            <label style={lbl}>Aceptas en tu zona ({cfg.local_region || 'local'})</label>
+            <div style="display:flex; gap:16px; flex-wrap:wrap;">
+              {modOpts.map((m) => (
+                <label style={chk}><input type="checkbox" name="local_modalidades" value={m.v} checked={cfg.local_modalidades.includes(m.v)} style={cbox} />{m.l}</label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={lbl}>Aceptas en el resto de España</label>
+            <div style="display:flex; gap:16px; flex-wrap:wrap;">
+              {modOpts.map((m) => (
+                <label style={chk}><input type="checkbox" name="resto_modalidades" value={m.v} checked={cfg.resto_modalidades.includes(m.v)} style={cbox} />{m.l}</label>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2 · Preferencias de la web -->
+      <section class="card" style="padding:20px;">
+        <h3 style={secTitle}><span style={num}>2</span> Preferencias de la web</h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:8px;">
+          <div>
+            <label style={lbl}>Score mínimo de la "cola de hoy"</label>
+            <input type="number" name="min_score_cola" value={cfg.min_score_cola} min="0" max="100" style={inp} />
+          </div>
+          <div>
+            <label style={lbl}>Marca de la cabecera (Empleo &lt;titular&gt;)</label>
+            <input type="text" name="titular" value={cfg.titular} placeholder="MiBúsqueda" style={inp} />
+          </div>
+        </div>
+      </section>
+
+      <!-- 3 · Fuentes de scraping -->
+      <section class="card" style="padding:20px; grid-column:1 / -1;">
+        <h3 style={secTitle}><span style={num}>3</span> Fuentes de scraping</h3>
+        <p style="color:var(--color-muted); font-size:.82rem; margin:0 0 16px;">De dónde y qué buscar. El scraper lo lee de la base de datos en su siguiente ejecución.</p>
+
+        <label style={lbl}>Portales</label>
+        <div style="display:flex; flex-wrap:wrap; gap:10px 22px; margin-bottom:18px;">
+          {SITE_OPTIONS.map((o) => (
+            <label style={chk}>
+              <input type="checkbox" name="sites" value={o.v} checked={cfg.sites.includes(o.v)} style={cbox} />
+              <span>{o.l}{o.note && <span style={`font-size:.72rem; margin-left:5px; color:${o.reliable ? 'var(--color-good)' : 'var(--color-muted)'};`}>· {o.note}</span>}</span>
+            </label>
+          ))}
+        </div>
+        <p style="color:var(--color-muted); font-size:.76rem; margin:-8px 0 18px;">Indeed y los feeds RSS son los más fiables desde una IP normal. LinkedIn/Google/Glassdoor suelen necesitar <strong>proxy</strong> (variable <code>PROXIES</code> del scraper) para dar resultados.</p>
+
+        <label style={lbl}>Países</label>
+        <div style="display:flex; flex-wrap:wrap; gap:10px 16px; margin-bottom:8px;">
+          {COUNTRY_OPTIONS.map((o) => (
+            <label style={chk}><input type="checkbox" name="countries" value={o.v} checked={cfg.countries.includes(o.v)} style={cbox} />{o.l}</label>
+          ))}
+        </div>
+        <input type="text" name="countries_extra" value={extraCountries.join(', ')} placeholder="otros países (nombre en inglés, separados por comas)" style={`${inp} margin-bottom:18px;`} />
+
+        <label style={lbl}>Puestos que buscas</label>
+        <div style="display:flex; flex-wrap:wrap; gap:9px 16px; margin-bottom:8px;">
+          {ROLE_OPTIONS.map((r) => (
+            <label style={chk}><input type="checkbox" name="search_terms" value={r} checked={cfg.search_terms.includes(r)} style={cbox} /><span style="text-transform:capitalize;">{r}</span></label>
+          ))}
+        </div>
+        <input type="text" name="search_terms_extra" value={extraTerms.join(', ')} placeholder="otros términos (separados por comas)" style={inp} />
+
+        <hr style={hr} />
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px; font-size:.84rem; color:var(--color-muted);">
+          <span>El scraper buscará tu zona como:</span>
+          <strong style="color:var(--color-text); background:var(--color-surface-2); border:1px solid var(--color-border); border-radius:8px; padding:3px 10px;">{derivedLoc}</strong>
+          <span>(derivado de la sección 1 · país principal el primero marcado)</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div>
+            <label style={lbl}>Antigüedad máx.</label>
+            <select name="hours_old" style={inp}>
+              {!hoursHasOpt && <option value={cfg.hours_old} selected>{cfg.hours_old} h</option>}
+              {HOURS_OPTIONS.map((h) => (<option value={h.v} selected={h.v === cfg.hours_old}>{h.l}</option>))}
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Resultados / búsqueda</label>
+            <input type="number" name="results_wanted" value={cfg.results_wanted} min="1" max="200" style={inp} />
+          </div>
+        </div>
+        <label style={`${lbl} margin-top:14px;`}>Feeds RSS extra (uno por línea)</label>
+        <textarea name="rss_feeds" rows="2" style={inp} placeholder="https://weworkremotely.com/categories/remote-programming-jobs.rss">{cfg.rss_feeds.join('\n')}</textarea>
+      </section>
+
+      <!-- 4 · Perfil del candidato -->
+      <section class="card" style="padding:20px; grid-column:1 / -1;">
+        <h3 style={secTitle}><span style={num}>4</span> Tu perfil (para cartas y CV)</h3>
+        <p style="color:var(--color-muted); font-size:.82rem; margin:0 0 12px;">Lo que la IA usa para redactar <strong>sin inventar</strong>. Se guarda en la base de datos, no en el vault: el sistema es autónomo. Todo lo que pongas debe ser cierto.</p>
+        <div style={`font-size:.8rem; margin:0 0 16px; padding:8px 12px; border-radius:8px; border:1px solid ${perfilVacio ? 'var(--color-mid)' : 'var(--color-border)'}; color:${perfilVacio ? 'var(--color-mid)' : 'var(--color-muted)'}; background:var(--color-surface-2);`}>
+          {perfilVacio
+            ? '○ Perfil vacío o muy corto: rellénalo para que las cartas dejen de ser genéricas.'
+            : '● Perfil guardado. n8n lo usa automáticamente para tus cartas, ajustes de CV y prep de entrevista (wf3 y wf6 lo leen de la BD).'}
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+          <div><label style={lbl}>Nombre completo</label><input type="text" name="nombre" value={cfg.nombre} placeholder="Nombre Apellidos" style={inp} /></div>
+          <div><label style={lbl}>Email</label><input type="email" name="email" value={cfg.email} placeholder="tu@email.com" style={inp} /></div>
+          <div><label style={lbl}>Teléfono</label><input type="text" name="telefono" value={cfg.telefono} placeholder="600 000 000" style={inp} /></div>
+          <div><label style={lbl}>GitHub</label><input type="text" name="github" value={cfg.github} placeholder="github.com/tu-usuario" style={inp} /></div>
+          <div style="grid-column:1 / -1;"><label style={lbl}>Web / portfolio</label><input type="text" name="web" value={cfg.web} placeholder="tu-web.dev" style={inp} /></div>
+        </div>
+        <label style={lbl}>Perfil profesional (un dato por línea: título, experiencia, proyectos, stack, lo que no tienes)</label>
+        <textarea name="perfil" rows="12" style={`${inp} font-family:var(--font-mono, monospace); font-size:.82rem; line-height:1.5;`} placeholder={"Ej.\nTítulo/rol · ciudad · disponibilidad · idiomas\nEXPERIENCIA: Empresa, Puesto (años): logros con cifras\nPROYECTOS: nombre — qué es, stack, resultado medible\nSTACK: lenguajes; BBDD; frameworks; infra\nLO QUE NO TIENE (sé honesto): tecnologías/seniority que aún no dominas"}>{cfg.perfil}</textarea>
+        <p style="color:var(--color-muted); font-size:.76rem; margin:10px 0 0;">Cuanto más concreto (cifras, nombres de proyecto, resultados), mejores cartas y menos relleno. wf3 y wf6 leen este perfil de la BD; si lo dejas vacío usan el de respaldo del propio flujo.</p>
+      </section>
+
+      <!-- 5 · IA (proveedores) -->
+      <section class="card" style="padding:20px; grid-column:1 / -1;">
+        <h3 style={secTitle}><span style={num}>5</span> IA (proveedores)</h3>
+        <p style="color:var(--color-muted); font-size:.82rem; margin:0 0 16px;">Claves para puntuar ofertas y redactar cartas. Con <strong>una</strong> basta; el resto son fallback. Las usa el <strong>worker</strong> (y n8n si lo migras). Se guardan en la BD; deja un campo vacío para <strong>conservar</strong> la clave ya guardada.</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          {iaFields.map((k) => (
+            <div>
+              <label style={lbl}>{k.label}</label>
+              <div style="margin-bottom:6px;">
+                {k.saved
+                  ? <span style="display:inline-flex; align-items:center; gap:6px; font-size:.74rem; color:var(--color-good); background:rgba(46,160,67,.12); border:1px solid rgba(46,160,67,.35); padding:2px 9px; border-radius:999px;">✓ guardada · <code style="font-family:var(--font-mono,monospace);">{k.saved}</code></span>
+                  : <span style="display:inline-flex; align-items:center; font-size:.74rem; color:var(--color-muted); background:#14181f; border:1px solid var(--color-border); padding:2px 9px; border-radius:999px;">sin guardar</span>}
+              </div>
+              <input type="password" name={k.name} value="" autocomplete="off" placeholder={k.saved ? 'vacío = conservar · escribe para reemplazar' : k.hint} style={inp} />
+              {k.saved && (
+                <label style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:.76rem; color:var(--color-muted); cursor:pointer;">
+                  <input type="checkbox" name="ia_clear" value={k.name} style={cbox} /> Borrar esta clave
+                </label>
+              )}
+            </div>
+          ))}
+          <div>
+            <label style={lbl}>Ollama URL (IA local, sin clave)</label>
+            <input type="text" name="ia_ollama_url" value={cfg.ia?.ollama_url} placeholder="http://localhost:11434/v1" style={inp} />
+          </div>
+        </div>
+        <p style="color:var(--color-muted); font-size:.76rem; margin:10px 0 0;">Groq: console.groq.com · Gemini: aistudio.google.com/apikey · xAI: console.x.ai. Los endpoints por defecto ya están en el worker; solo hace falta la clave.</p>
+      </section>
+
+      <details class="card" style="padding:20px; grid-column:1 / -1;">
+        <summary style="cursor:pointer; font-weight:600; font-size:1rem;">Afinado del scoring en n8n <span style="color:var(--color-muted); font-weight:400; font-size:.82rem;">(avanzado · opcional)</span></summary>
+        <p style="color:var(--color-muted); font-size:.82rem; margin:12px 0;">Palabras clave que usa el prefiltro de n8n (wf1) para <strong>puntuar o descartar</strong> por título. Déjalo vacío para usar las listas por defecto del flujo.</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div>
+            <label style={lbl}>Incluir (títulos que sí)</label>
+            <textarea name="include_keywords" rows="3" style={inp} placeholder="developer, backend, devops, sistemas, python…">{cfg.include_keywords.join(', ')}</textarea>
+          </div>
+          <div>
+            <label style={lbl}>Excluir (títulos que no)</label>
+            <textarea name="exclude_keywords" rows="3" style={inp} placeholder="comercial, ventas, camarero, teleoperador…">{cfg.exclude_keywords.join(', ')}</textarea>
+          </div>
+        </div>
+      </details>
+
+      <div style="grid-column:1 / -1; display:flex; gap:12px; align-items:center; position:sticky; bottom:0; padding:14px 0; background:linear-gradient(to top, var(--color-bg) 65%, transparent);">
+        <button style="padding:11px 24px; background:linear-gradient(135deg,var(--color-primary),var(--color-primary-2)); color:#fff; border:none; border-radius:9px; font-weight:600; cursor:pointer;">Guardar configuración</button>
+        <span style="color:var(--color-muted); font-size:.82rem;">La web lo aplica al instante; scraper y n8n lo leen de la BD.</span>
+      </div>
+    </form>
+  </div>
+</Base>

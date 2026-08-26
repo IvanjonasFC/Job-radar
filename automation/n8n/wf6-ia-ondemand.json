@@ -1,0 +1,91 @@
+{
+  "name": "WF6 IA on-demand",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "empleo-hook-ia",
+        "responseMode": "onReceived",
+        "responseData": "OK, la IA lo esta preparando. Recarga la ficha en unos segundos.",
+        "options": {}
+      },
+      "id": "w00-webhook",
+      "name": "Webhook IA",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1120, 0],
+      "webhookId": "empleo-hook-ia"
+    },
+    {
+      "parameters": {
+        "jsCode": "const q = $('Webhook IA').item.json.query || {};\nconst id = Number(q.id) || 0;\nconst tipo = (String(q.tipo || 'entrevista') === 'carencias') ? 'carencias' : 'entrevista';\nconst selectSql = `SELECT id, title, company, location, keywords, description, (SELECT data->>'perfil' FROM empleo.settings WHERE id=1) AS perfil_cfg FROM empleo.job_offers WHERE id=${id};`;\nreturn [{ json: { id: id, tipo: tipo, selectSql: selectSql } }];"
+      },
+      "id": "w02-prep",
+      "name": "Prep IA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-880, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.selectSql }}",
+        "options": {}
+      },
+      "id": "w03-dbleer",
+      "name": "DB leer oferta",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-640, 0],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const helpers = this.helpers;\nconst NL = String.fromCharCode(10);\nconst GROQ_KEY = $env['GROQ_API_KEY'] || '';\nconst GEMINI_KEY = $env['GEMINI_API_KEY'] || '';\nconst GROK_KEY = $env['XAI_API_KEY'] || '';\nconst providers = [\n  { name: 'gemini', url: 'https://cms.example.com/llm/gemini/v1beta/openai/chat/completions', key: GEMINI_KEY, model: 'gemini-3.6-flash' },\n  { name: 'groq', url: 'https://cms.example.com/llm/groq/openai/v1/chat/completions', key: GROQ_KEY, model: 'openai/gpt-oss-120b' },\n  { name: 'grok', url: 'https://cms.example.com/llm/xai/v1/chat/completions', key: GROK_KEY, model: 'grok-3' },\n  { name: 'ollama', url: 'http://ollama:11434/v1/chat/completions', key: '', model: 'qwen3:8b' }\n];\nconst PERFIL = ['<<< PON TU PERFIL AQUI: ver automation/n8n/profile.example.md >>>'].join(NL);\nconst o = ($('DB leer oferta').first() || { json: {} }).json;\nconst tipo = ($('Prep IA').first() || { json: {} }).json.tipo || 'entrevista';\nconst oferta = 'OFERTA: ' + (o.title||'') + ' en ' + (o.company||'') + ' (' + (o.location||'') + ')' + NL + 'TECNOLOGIAS: ' + (o.keywords||'') + NL + 'DESCRIPCION:' + NL + String(o.description||'').slice(0,3000);\nlet SYS;\nif (tipo === 'carencias') {\n  SYS = ['Eres el coach de carrera de el candidato (perfil abajo). Analiza ESTA oferta frente a su perfil y responde en markdown, conciso y accionable, con estas 3 secciones:','1) QUE YA TIENE que encaja con la oferta (para destacarlo en CV/entrevista).','2) QUE LE FALTA (tecnologias o experiencia que pide la oferta y el candidato no tiene). Se honesto.','3) MINI-PLAN para cubrir cada carencia (recurso/curso/proyecto rapido de 1-2 semanas).','Usa SOLO datos reales del perfil; no inventes. == PERFIL ==', PERFIL].join(NL);\n} else {\n  SYS = ['Eres el preparador de entrevistas de el candidato (perfil abajo). Para ESTA oferta genera en markdown:','1) 8-10 PREGUNTAS de entrevista probables (tecnicas y de encaje) que le harian para este puesto.','2) Bajo cada pregunta, un apunte breve de COMO responder apoyandose en su experiencia real del perfil.','3) 3 PREGUNTAS que el candidato deberia hacer al entrevistador.','Concreto y util, sin relleno. == PERFIL ==', PERFIL].join(NL);\n}\nlet content = '', used = 'none';\nfor (const p of providers) {\n  if (p.name !== 'ollama' && !p.key) continue;\n  try {\n    const headers = { 'Content-Type': 'application/json' };\n    if (p.key) headers['Authorization'] = 'Bearer ' + p.key;\n    const res = await helpers.httpRequest({ method: 'POST', url: p.url, headers: headers, body: { model: p.model, messages: [{ role: 'system', content: SYS }, { role: 'user', content: oferta }], temperature: 0.5, max_tokens: 2048 }, json: true, timeout: 120000 });\n    const c = (res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content) || (res.message && res.message.content) || '';\n    if (c && c.trim().length > 400) { content = c; used = p.name; break; }\n    if (c && !content) { content = c; used = p.name; }\n  } catch (e) {}\n}\nif (!content) content = '(no se pudo generar, revisa las IA)';\nconst esc = v => `'` + String(v==null?``:v).replace(/'/g,`''`) + `'`;\nconst idNum = Number(o.id)||0;\nconst updateSql = `INSERT INTO empleo.ai_docs (offer_id, tipo, texto, ia, created_at) VALUES (`+idNum+`, `+esc(tipo)+`, `+esc(content)+`, `+esc(used)+`, now()) ON CONFLICT (offer_id, tipo) DO UPDATE SET texto=EXCLUDED.texto, ia=EXCLUDED.ia, created_at=now();`;\nconst msg = (tipo==='carencias'?'Analisis de carencias':'Prep de entrevista')+' listo: '+(o.title||'')+' - '+(o.company||'');\nreturn [{ json: { updateSql: updateSql, msg: msg } }];"
+      },
+      "id": "w04-gen",
+      "name": "Generar IA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.updateSql }}",
+        "options": {}
+      },
+      "id": "w05-dbsave",
+      "name": "DB guardar IA",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-160, 0],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cms.example.com/tgapi/botYOUR_TELEGRAM_BOT_TOKEN/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"YOUR_TELEGRAM_CHAT_ID\",\n  \"text\": {{ JSON.stringify($('Generar IA').item.json.msg || 'IA lista') }},\n  \"disable_web_page_preview\": true\n}",
+        "options": {}
+      },
+      "id": "w06-tg",
+      "name": "Avisar IA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [80, 0],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook IA": { "main": [[{ "node": "Prep IA", "type": "main", "index": 0 }]] },
+    "Prep IA": { "main": [[{ "node": "DB leer oferta", "type": "main", "index": 0 }]] },
+    "DB leer oferta": { "main": [[{ "node": "Generar IA", "type": "main", "index": 0 }]] },
+    "Generar IA": { "main": [[{ "node": "DB guardar IA", "type": "main", "index": 0 }]] },
+    "DB guardar IA": { "main": [[{ "node": "Avisar IA", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "Europe/Madrid" }
+}

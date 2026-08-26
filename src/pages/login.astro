@@ -1,0 +1,31 @@
+---
+import '../styles/global.css';
+import { authEnabled } from '../lib/auth';
+if (!authEnabled()) return Astro.redirect('/');
+const error = Astro.url.searchParams.get('error');
+const next = Astro.url.searchParams.get('next') || '/';
+const inp = 'width:100%; padding:11px 13px; background:var(--color-surface-2); border:1px solid var(--color-border); border-radius:9px; color:var(--color-text); box-sizing:border-box; font-size:1rem;';
+---
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <link rel="preconnect" href="https://fonts.bunny.net" />
+    <link href="https://fonts.bunny.net/css?family=inter:400,500,600|space-grotesk:500,700" rel="stylesheet" />
+    <title>Entrar · CRM Empleo</title>
+  </head>
+  <body>
+    <main style="min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;">
+      <form method="post" action="/api/login" class="card" style="width:100%; max-width:380px; padding:28px;">
+        <h1 style="margin:0 0 4px; font-size:1.5rem;">Empleo <span class="text-gradient">CRM</span></h1>
+        <p style="color:var(--color-muted); margin:0 0 20px; font-size:.9rem;">Introduce la contraseña para entrar.</p>
+        {error && <div style="color:var(--color-danger); font-size:.85rem; margin-bottom:12px;">Contraseña incorrecta.</div>}
+        <input type="hidden" name="next" value={next} />
+        <input type="password" name="password" placeholder="Contraseña" autofocus required style={inp} />
+        <button style="margin-top:14px; width:100%; padding:11px; background:linear-gradient(135deg,var(--color-primary),var(--color-primary-2)); color:#fff; border:none; border-radius:9px; font-weight:600; font-size:1rem; cursor:pointer;">Entrar</button>
+      </form>
+    </main>
+  </body>
+</html>

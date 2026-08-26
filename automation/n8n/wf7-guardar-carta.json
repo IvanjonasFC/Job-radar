@@ -1,0 +1,109 @@
+{
+  "name": "WF7 Empleo · Guardar carta",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "empleo-hook-guardar-carta",
+        "responseMode": "onReceived",
+        "responseData": "Carta guardada en el vault de Obsidian. Puedes cerrar esta pestana.",
+        "options": {}
+      },
+      "id": "wf7-webhook-01",
+      "name": "Webhook guardar-carta",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -820,
+        300
+      ],
+      "webhookId": "empleo-hook-guardar-carta"
+    },
+    {
+      "parameters": {
+        "jsCode": "const id = Number($('Webhook guardar-carta').item.json.query.id) || 0;\nreturn [{ json: { id: id, selectSql: `SELECT g.carta_md, g.asunto, o.company, o.title, o.vault_path FROM empleo.generated g JOIN empleo.job_offers o ON o.id = g.offer_id WHERE o.id = ${id};` } }];"
+      },
+      "id": "wf7-prep-01",
+      "name": "Prep guardar-carta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -580,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.selectSql }}",
+        "options": {}
+      },
+      "id": "wf7-dbleer-01",
+      "name": "DB leer carta",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -340,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "fNCgxp2Pd4DSfmsf",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst NL = String.fromCharCode(10);\nconst r = $json || {};\nconst vp = r.vault_path;\nif (!vp || !r.carta_md) { return [{ json: { ok: false, info: 'sin vault_path o carta en BD' } }]; }\nconst folder = vp.slice(0, vp.lastIndexOf('/'));\nconst path = folder + '/Carta de presentacion.md';\nconst today = new Date().toISOString().slice(0, 10);\nconst FOOTER = '[Tu Nombre]  |  [tu-email]  |  [tu-web]  |  [tu-github]';\nconst carta = ['# Carta de presentacion', '', '**Para:** ' + (r.company || '') + '  |  **Puesto:** ' + (r.title || ''), '**Asunto:** ' + (r.asunto || ''), '**Fecha:** ' + today, '', '---', '', (r.carta_md || ''), '', '---', FOOTER].join(NL);\ntry { fs.mkdirSync(folder, { recursive: true }); fs.writeFileSync(path, Buffer.from(carta, 'utf8')); return [{ json: { ok: true, path: path } }]; }\ncatch (e) { return [{ json: { ok: false, error: String((e && e.message) || e) } }]; }"
+      },
+      "id": "wf7-write-01",
+      "name": "Escribir carta (fs)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -100,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook guardar-carta": {
+      "main": [
+        [
+          {
+            "node": "Prep guardar-carta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep guardar-carta": {
+      "main": [
+        [
+          {
+            "node": "DB leer carta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB leer carta": {
+      "main": [
+        [
+          {
+            "node": "Escribir carta (fs)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

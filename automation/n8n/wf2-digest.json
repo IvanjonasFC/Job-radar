@@ -1,0 +1,180 @@
+{
+  "name": "WF2 Empleo · Digest",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "d00-manual",
+      "name": "Inicio manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-720, 128]
+    },
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "cronExpression", "expression": "0 9,20 * * *" } ] }
+      },
+      "id": "d01-cron",
+      "name": "9:00 y 20:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-720, 336]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, title, company, location, modalidad, source, score, verdict, keywords, reasons, url FROM (SELECT DISTINCT ON (lower(title), lower(company)) id, title, company, location, modalidad, source, score, verdict, keywords, reasons, url FROM empleo.job_offers WHERE status IN ('evaluada','notificada') AND first_seen >= now() - interval '10 days' ORDER BY lower(title), lower(company), score DESC NULLS LAST) d ORDER BY score DESC NULLS LAST LIMIT 12;",
+        "options": {}
+      },
+      "id": "d02-leer",
+      "name": "DB leer pendientes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-460, 40],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = 'https://n8n.example.com/webhook/empleo-hook';\nconst items = $input.all().map(i => i.json).slice(0, 12);\nconst ids = items.map(o => Number(o.id)).filter(Boolean);\nconst NL = String.fromCharCode(10);\nconst good = items.filter(o => (Number(o.score)||0) >= 80).length;\nconst mid = items.filter(o => { const s = Number(o.score)||0; return s >= 60 && s < 80; }).length;\nconst low = items.length - good - mid;\nconst dot = s => s >= 80 ? '🟢' : (s >= 60 ? '🟡' : '⚪');\nlet blocks = ['📋 Ofertas abiertas: ' + items.length + '   🟢 ' + good + ' · 🟡 ' + mid + ' · ⚪ ' + low, '━━━━━━━━━━━━━━'];\nconst keyboard = [];\nitems.forEach((o, idx) => {\n  const n = idx + 1;\n  const sc = Number(o.score) || 0;\n  const kw = (o.keywords || '').toString().split(',').map(s => s.trim()).filter(Boolean).slice(0, 6).join(', ');\n  const reason = (o.reasons || '').toString().replace(/\\s+/g, ' ').trim().slice(0, 220);\n  blocks.push('');\n  blocks.push('#' + n + '  ' + dot(sc) + ' ' + sc + '/100 · ' + (o.verdict || ''));\n  blocks.push('💼 ' + (o.title || 'Sin título') + ' — ' + (o.company || 'Empresa n/d'));\n  const _loc0 = (o.location || '').trim();\n  const _mod = (o.modalidad || '').trim();\n  const _modish = s => /remot|teletrab|presencial|h[ií]brid|semipresencial|desde casa|anywhere/i.test(s);\n  const _loc = (!_loc0 || _loc0.toLowerCase() === 'no indicada' || _modish(_loc0)) ? '' : _loc0;\n  const _ubi = !_loc ? (_mod || 'ubicación n/d') : ((_mod && _loc.toLowerCase() !== _mod.toLowerCase()) ? (_loc + ' · ' + _mod) : _loc);\n  blocks.push('📍 ' + _ubi);\n  if (kw) blocks.push('🔑 ' + kw);\n  if (reason) blocks.push('💡 ' + reason);\n  blocks.push('🔗 ' + (o.url || ''));\n  keyboard.push([\n    { text: '📄 CV #' + n, url: base + '-generar?id=' + o.id },\n    { text: '✅ Aplicar #' + n, url: base + '-aplicar?id=' + o.id },\n    { text: '🗑️ #' + n, url: base + '-descartar?id=' + o.id }\n  ]);\n});\nconst text = blocks.join(NL).slice(0, 4000);\nconst reply_markup = { inline_keyboard: keyboard };\nreturn [{ json: { text: text, reply_markup: reply_markup, ids: ids, count: items.length } }];"
+      },
+      "id": "d03-build",
+      "name": "Construir digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-220, 40]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cms.example.com/tgapi/botYOUR_TELEGRAM_BOT_TOKEN/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"YOUR_TELEGRAM_CHAT_ID\",\n  \"text\": {{ JSON.stringify($json.text) }},\n  \"reply_markup\": {{ JSON.stringify($json.reply_markup) }},\n  \"disable_web_page_preview\": true\n}",
+        "options": {}
+      },
+      "id": "d04-tg",
+      "name": "Enviar digest (tgapi)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [40, 40],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ids = $('Construir digest').first().json.ids || [];\nif (!ids.length) { return [{ json: { updateSql: 'SELECT 1;' } }]; }\nconst updateSql = `UPDATE empleo.job_offers SET status='notificada', notified_at=now(), updated_at=now() WHERE id IN (` + ids.join(',') + `) AND status='evaluada';`;\nreturn [{ json: { updateSql: updateSql } }];"
+      },
+      "id": "d05-sqlnotif",
+      "name": "SQL notificada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [300, 40]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.updateSql }}",
+        "options": {}
+      },
+      "id": "d06-dbnotif",
+      "name": "DB marcar notificada",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [540, 40],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT (SELECT json_agg(t) FROM (SELECT status, count(*) AS c FROM empleo.job_offers GROUP BY status ORDER BY count(*) DESC) t) AS por_estado, (SELECT json_agg(t) FROM (SELECT id,title,company,location,modalidad,score,verdict,keywords,reasons,url FROM empleo.job_offers WHERE status IN ('evaluada','notificada') ORDER BY score DESC NULLS LAST LIMIT 60) t) AS top_ofertas, (SELECT json_agg(t) FROM (SELECT id,title,company,stage,applied_at,next_action,next_date,url FROM empleo.applications WHERE stage NOT IN ('rechazada','aceptada') ORDER BY applied_at DESC) t) AS pipeline, (SELECT count(*) FROM empleo.job_offers WHERE first_seen >= now() - interval '7 days') AS ultimas_7d;",
+        "options": {}
+      },
+      "id": "d07-tablero-datos",
+      "name": "DB datos tablero",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-460, 260],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json;\nconst asArr = v => { if (!v) return []; if (Array.isArray(v)) return v; try { return JSON.parse(v); } catch(e){ return []; } };\nconst est = asArr(raw.por_estado);\nconst top = asArr(raw.top_ofertas);\nconst pipe = asArr(raw.pipeline);\nconst NL = String.fromCharCode(10);\nconst c = v => String(v==null?'':v).split('|').join('/').split(NL).join(' ').trim();\nconst ubi = o => { const l=c(o.location); const m=c(o.modalidad); const isMod=/remot|teletrab|presencial|h.brid|semipresencial/i.test(l); const loc=(!l||l.toLowerCase()==='no indicada'||isMod)?'':l; return !loc?(m||'-'):(m&&loc.toLowerCase()!==m.toLowerCase()?loc+' - '+m:loc); };\nconst fecha = new Date().toISOString().slice(0,16).replace('T',' ');\nconst L = [];\nL.push('---'); L.push('actualizado: ' + fecha); L.push('tags: [empleo, tablero]'); L.push('---');\nL.push('# Tablero de busqueda de empleo'); L.push('');\nL.push('Actualizado automaticamente por el radar. Ofertas nuevas ultimos 7 dias: ' + (raw.ultimas_7d||0) + '.'); L.push('');\nL.push('## Estado general'); L.push('| Estado | Total |'); L.push('|---|---|');\nfor (const e of est) { L.push('| ' + c(e.status) + ' | ' + (e.c||0) + ' |'); }\nL.push('');\nL.push('## Oportunidades abiertas (' + top.length + ')'); L.push('| Score | Puesto | Empresa | Ubicacion | Tecnologias | Enlace |'); L.push('|---|---|---|---|---|---|');\nfor (const o of top) { L.push('| ' + (o.score||0) + ' | ' + c(o.title) + ' | ' + c(o.company) + ' | ' + ubi(o) + ' | ' + c(o.keywords).slice(0,60) + ' | [ver](' + c(o.url) + ') |'); }\nL.push('');\nL.push('## Detalle (top 15, todo lo que Telegram recorta)');\nfor (const o of top.slice(0,15)) { L.push(''); L.push('### ' + (o.score||0) + '/100 - ' + c(o.title) + ' (' + c(o.company) + ')'); L.push('- Ubicacion: ' + ubi(o)); if (c(o.keywords)) L.push('- Tecnologias: ' + c(o.keywords)); if (c(o.verdict)) L.push('- Veredicto: ' + c(o.verdict)); if (c(o.reasons)) L.push('- Encaje: ' + c(o.reasons)); L.push('- [Ver oferta](' + c(o.url) + ')'); }\nL.push('');\nL.push('## Candidaturas en curso');\nif (!pipe.length) { L.push('Ninguna candidatura activa por ahora.'); }\nelse {\n  L.push('| Empresa | Puesto | Fase | Aplicada | Proxima accion |'); L.push('|---|---|---|---|---|');\n  for (const a of pipe) { L.push('| ' + c(a.company) + ' | ' + c(a.title) + ' | ' + c(a.stage) + ' | ' + (a.applied_at?String(a.applied_at).slice(0,10):'') + ' | ' + c(a.next_action) + (a.next_date?(' ('+String(a.next_date).slice(0,10)+')'):'') + ' |'); }\n}\nconst md = L.join(NL);\nconst contentB64 = Buffer.from(md, 'utf8').toString('base64');\nreturn [{ json: { path: '/vault/Ofertas/_TABLERO.md', contentB64: contentB64 } }];"
+      },
+      "id": "d08-tablero-build",
+      "name": "Construir TABLERO",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-220, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nfs.mkdirSync('/vault/Ofertas', { recursive: true });\nfs.writeFileSync($json.path, Buffer.from($json.contentB64, 'base64'));\nreturn [{ json: { ok: true, path: $json.path } }];"
+      },
+      "id": "d09-tablero-fs",
+      "name": "Guardar TABLERO (fs)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 260],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT json_agg(t) AS rows FROM (SELECT status, company, title, location, modalidad, score, verdict, source, to_char(first_seen,'YYYY-MM-DD') AS fecha_deteccion, to_char(generated_at,'YYYY-MM-DD') AS fecha_cv, to_char(applied_at,'YYYY-MM-DD') AS fecha_postulacion, url FROM empleo.job_offers WHERE status IN ('aplicada','generada','notificada') OR (status='evaluada' AND first_seen >= now() - interval '30 days') ORDER BY CASE status WHEN 'aplicada' THEN 1 WHEN 'generada' THEN 2 WHEN 'notificada' THEN 3 WHEN 'evaluada' THEN 4 ELSE 5 END, COALESCE(applied_at, generated_at, notified_at, first_seen) DESC NULLS LAST) t;",
+        "options": {}
+      },
+      "id": "e01-csv-db",
+      "name": "DB candidaturas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-460, 480],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json;\nconst asArr = v => { if (!v) return []; if (Array.isArray(v)) return v; try { return JSON.parse(v); } catch(e){ return []; } };\nconst rows = asArr(raw.rows);\nconst DQ = String.fromCharCode(34);\nconst NL10 = String.fromCharCode(10);\nconst NL13 = String.fromCharCode(13);\nconst estadoLabel = { aplicada: '1-Postulada', generada: '2-CV generado', notificada: '3-Notificada', evaluada: '4-Abierta', descartada: '5-Descartada' };\nconst q = v => { let s = String(v==null?'':v).split(DQ).join(DQ+DQ).split(NL10).join(' ').split(NL13).join(' '); return (s.indexOf(';')>=0 || s.indexOf(DQ)>=0) ? DQ+s+DQ : s; };\nconst cols = ['Estado','Empresa','Puesto','Ubicacion','Modalidad','Encaje','Veredicto','Fuente','Fecha_deteccion','Fecha_CV','Fecha_postulacion','URL'];\nconst out = [cols.join(';')];\nfor (const o of rows) { const est = estadoLabel[o.status] || String(o.status||''); out.push([est, o.company, o.title, o.location, o.modalidad, (o.score==null?'':o.score), o.verdict, o.source, o.fecha_deteccion, o.fecha_cv, o.fecha_postulacion, o.url].map(q).join(';')); }\nconst csv = String.fromCharCode(0xFEFF) + out.join(NL13+NL10);\nconst contentB64 = Buffer.from(csv, 'utf8').toString('base64');\nreturn [{ json: { path: '/vault/Ofertas/candidaturas.csv', contentB64: contentB64 } }];"
+      },
+      "id": "e02-csv-build",
+      "name": "Construir CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-220, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nfs.mkdirSync('/vault/Ofertas', { recursive: true });\nfs.writeFileSync($json.path, Buffer.from($json.contentB64, 'base64'));\nreturn [{ json: { ok: true, path: $json.path } }];"
+      },
+      "id": "e03-csv-fs",
+      "name": "Guardar CSV (fs)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 480],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Inicio manual": { "main": [[{ "node": "DB leer pendientes", "type": "main", "index": 0 }, { "node": "DB datos tablero", "type": "main", "index": 0 }, { "node": "DB candidaturas", "type": "main", "index": 0 }]] },
+    "9:00 y 20:00": { "main": [[{ "node": "DB leer pendientes", "type": "main", "index": 0 }, { "node": "DB datos tablero", "type": "main", "index": 0 }, { "node": "DB candidaturas", "type": "main", "index": 0 }]] },
+    "DB leer pendientes": { "main": [[{ "node": "Construir digest", "type": "main", "index": 0 }]] },
+    "Construir digest": { "main": [[{ "node": "Enviar digest (tgapi)", "type": "main", "index": 0 }]] },
+    "Enviar digest (tgapi)": { "main": [[{ "node": "SQL notificada", "type": "main", "index": 0 }]] },
+    "SQL notificada": { "main": [[{ "node": "DB marcar notificada", "type": "main", "index": 0 }]] },
+    "DB datos tablero": { "main": [[{ "node": "Construir TABLERO", "type": "main", "index": 0 }]] },
+    "Construir TABLERO": { "main": [[{ "node": "Guardar TABLERO (fs)", "type": "main", "index": 0 }]] },
+    "DB candidaturas": { "main": [[{ "node": "Construir CSV", "type": "main", "index": 0 }]] },
+    "Construir CSV": { "main": [[{ "node": "Guardar CSV (fs)", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Madrid",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": []
+}

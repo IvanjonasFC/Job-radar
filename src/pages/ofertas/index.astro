@@ -1,0 +1,220 @@
+---
+import Base from '../../layouts/Base.astro';
+import { listOffers, estadosDisponibles } from '../../lib/queries';
+import { sql } from '../../lib/db';
+import { ubi } from '../../lib/loc';
+import { getConfig, esLocal, matchPref } from '../../lib/config';
+
+const url = Astro.url;
+const q = url.searchParams.get('q') ?? '';
+const estado = url.searchParams.get('estado') ?? '';
+const modalidad = url.searchParams.get('modalidad') ?? '';
+const min = Number(url.searchParams.get('min') ?? 0) || 0;
+const sort = url.searchParams.get('sort') ?? 'reciente';
+const dir = url.searchParams.get('dir') === 'asc' ? 'asc' : url.searchParams.get('dir') === 'desc' ? 'desc' : null;
+const page = Math.max(0, Number(url.searchParams.get('page') ?? 0) || 0);
+const PAGE_SIZE = 40;
+
+const cfg = await getConfig();
+const soloEncaja = url.searchParams.get('encaja') === '1';
+
+const cols = [
+  { key: 'encaje', label: 'Encaje', first: 'desc' },
+  { key: 'puesto', label: 'Puesto', first: 'asc' },
+  { key: 'empresa', label: 'Empresa', first: 'asc' },
+  { key: 'ubicacion', label: 'Ubicación', first: 'asc' },
+  { key: 'estado', label: 'Estado', first: 'asc' },
+  { key: 'fuente', label: 'Fuente', first: 'asc' },
+  { key: 'fecha', label: 'Publicada', first: 'desc' },
+  { key: 'limite', label: 'Fecha límite', first: 'asc' },
+];
+const baseParams = () => {
+  const sp = new URLSearchParams();
+  if (q) sp.set('q', q);
+  if (estado) sp.set('estado', estado);
+  if (modalidad) sp.set('modalidad', modalidad);
+  if (min) sp.set('min', String(min));
+  if (soloEncaja) sp.set('encaja', '1');
+  return sp;
+};
+const sortHref = (key: string, first: string) => {
+  const active = sort === key;
+  const eff = dir ?? 'desc';
+  const next = active ? (eff === 'asc' ? 'desc' : 'asc') : first;
+  const sp = baseParams();
+  sp.set('sort', key); sp.set('dir', next);
+  return '/ofertas?' + sp.toString();
+};
+const pageHref = (pp: number) => {
+  const sp = baseParams();
+  if (sort) sp.set('sort', sort);
+  if (dir) sp.set('dir', dir);
+  if (pp > 0) sp.set('page', String(pp));
+  return '/ofertas?' + sp.toString();
+};
+
+let rows: any[] = [];
+let estados: any[] = [];
+let totalActivas = 0;
+let hasMore = false;
+let err: string | null = null;
+try {
+  rows = await listOffers({ q, estado, modalidad, min, sort, dir: dir ?? undefined, limit: PAGE_SIZE + 1, offset: page * PAGE_SIZE });
+  hasMore = rows.length > PAGE_SIZE;
+  if (hasMore) rows = rows.slice(0, PAGE_SIZE);
+  if (soloEncaja) rows = rows.filter((r) => matchPref(r, cfg));
+  estados = await estadosDisponibles();
+  const tc = await sql<any[]>`SELECT count(*)::int c FROM empleo.job_offers WHERE status <> 'caducada'`;
+  totalActivas = tc[0]?.c ?? 0;
+} catch (e: any) { err = e?.message ?? String(e); }
+
+const badge = (s: number) => (s >= 80 ? 'badge-good' : s >= 60 ? 'badge-mid' : 'badge-low');
+const inp = 'padding:9px 11px; background:#14181f; border:1px solid var(--color-border); border-radius:8px; color:var(--color-text);';
+const sel = "appearance:none; -webkit-appearance:none; padding:9px 30px 9px 11px; background-color:#14181f; background-image:url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8f98' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>\"); background-repeat:no-repeat; background-position:right 10px center; border:1px solid var(--color-border); border-radius:8px; color:var(--color-text); cursor:pointer;";
+const abierta = (o: any) => ['evaluada', 'notificada', 'nueva'].includes(o.status);
+const limColor = (o: any) => {
+  if (!abierta(o)) return 'var(--color-muted)';
+  const d = Number(o.dias_cierre);
+  if (o.cerrada || d <= 3) return 'var(--color-danger)';
+  if (d <= 7) return 'var(--color-mid)';
+  if (d <= 14) return '#e3b341';
+  return 'var(--color-muted)';
+};
+const limText = (o: any) => {
+  const d = Number(o.dias_cierre);
+  if (!abierta(o)) return o.cierre;
+  if (o.cerrada || d <= 0) return 'cerrada';
+  return d <= 14 ? `${o.cierre} · ${d}d` : o.cierre;
+};
+const desde = page * PAGE_SIZE + (rows.length ? 1 : 0);
+const hasta = page * PAGE_SIZE + rows.length;
+---
+<Base title="Ofertas">
+  <h1 style="margin:0 0 14px;">Ofertas</h1>
+
+  <!-- Barra de búsqueda + Limpiar antiguas integrado -->
+  <div style="display:flex; gap:10px; align-items:stretch; margin-bottom:12px; flex-wrap:wrap;">
+    <form method="get" class="card" style="flex:1 1 auto; min-width:0; padding:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <input type="search" name="q" value={q} placeholder="Buscar empresa o puesto…" style={`${inp} flex:1 1 200px; min-width:160px;`} />
+      <select name="estado" style={sel}>
+        <option value="">Todos los estados</option>
+        {estados.map((e) => <option value={e.status} selected={e.status === estado}>{e.status}</option>)}
+      </select>
+      <select name="modalidad" style={sel}>
+        <option value="">Cualquier modalidad</option>
+        {['remoto', 'hibrido', 'presencial'].map((m) => <option value={m} selected={m === modalidad}>{m}</option>)}
+      </select>
+      <label style="display:flex; align-items:center; color:var(--color-muted); font-size:.85rem; white-space:nowrap;">Encaje ≥
+        <input type="number" name="min" value={min} min="0" max="100" style={`${inp} width:64px; margin-left:6px;`} />
+      </label>
+      <select name="sort" style={sel}>
+        <option value="reciente" selected={sort === 'reciente' || sort === 'nuevas'}>Más recientes</option>
+        <option value="relevancia" selected={sort === 'relevancia'}>Relevancia</option>
+        <option value="encaje" selected={sort === 'encaje'}>Mejor encaje</option>
+      </select>
+      <label style="display:flex; align-items:center; gap:6px; color:var(--color-muted); font-size:.85rem; cursor:pointer; white-space:nowrap;"><input type="checkbox" name="encaja" value="1" checked={soloEncaja} style="accent-color:var(--color-primary);" /> Solo mi zona</label>
+      <button type="submit" style="padding:9px 18px; background:var(--color-primary); color:var(--color-primary-fg); border:none; border-radius:8px; font-weight:600; cursor:pointer;">Filtrar</button>
+      <a href="/ofertas" style="color:var(--color-muted); font-size:.85rem;">limpiar</a>
+    </form>
+    <form method="post" action="/api/limpiar" class="card" style="display:flex; align-items:center; padding:0 12px;" onsubmit="return confirm('¿Marcar como caducadas las ofertas abiertas de más de 30 días (incluidas las que solo tienen CV generado)? NO toca las que aplicaste. Desaparecen del panel pero siguen en la BD.');">
+      <input type="hidden" name="dias" value="30" />
+      <button title="Oculta las ofertas de más de 30 días (no borra, no toca las aplicadas)" style="display:inline-flex; align-items:center; gap:7px; padding:9px 14px; background:transparent; color:var(--color-text); border:none; cursor:pointer; font-size:.84rem; white-space:nowrap;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+        Limpiar antiguas
+      </button>
+    </form>
+  </div>
+
+  {err && <div class="card" style="padding:16px; border-color:var(--color-danger); color:var(--color-danger);">{err}</div>}
+
+  {!err && (
+    <>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:12px; flex-wrap:wrap;">
+        <span style="color:var(--color-muted); font-size:.82rem;">{totalActivas} convocatorias activas · mostrando {desde}–{hasta}</span>
+        <div class="pager">
+          {page > 0 ? <a href={pageHref(page - 1)} class="pg pg-sm">← Anterior</a> : <span class="pg pg-sm pg-off">← Anterior</span>}
+          <span class="pg-num">Página {page + 1}</span>
+          {hasMore ? <a href={pageHref(page + 1)} class="pg pg-sm">Siguiente →</a> : <span class="pg pg-sm pg-off">Siguiente →</span>}
+        </div>
+      </div>
+
+      <div class="card" style="overflow:auto;">
+        <table class="ofertas" style="width:100%; border-collapse:collapse; font-size:.9rem;">
+          <thead>
+            <tr style="text-align:left; color:var(--color-muted); white-space:nowrap;">
+              {cols.map((c) => {
+                const active = sort === c.key;
+                const arrow = active ? ((dir ?? 'desc') === 'asc' ? ' ↑' : ' ↓') : '';
+                return (
+                  <th>
+                    <a href={sortHref(c.key, c.first)} title="Ordenar por esta columna" style={`color:${active ? 'var(--color-primary)' : 'var(--color-text)'}; font-weight:700; font-size:.92rem; white-space:nowrap;`}>{c.label}{arrow}</a>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((o) => (
+              <tr style={`border-top:1px solid var(--color-border);${o.cerrada && abierta(o) ? ' background:rgba(248,81,73,0.13);' : o.status === 'aplicada' ? ' background:rgba(63,185,80,0.08);' : o.status === 'generada' ? ' background:rgba(255,107,0,0.05);' : o.status === 'nueva' ? ' background:rgba(74,163,255,0.07);' : ''}`}>
+                <td style="padding:10px;"><span class={`badge ${badge(o.score ?? 0)}`}>{o.score ?? 0}</span></td>
+                <td><a href={`/ofertas/${o.id}`}>{o.title}</a></td>
+                <td>{o.company}</td>
+                <td style="color:var(--color-muted); white-space:nowrap;">{ubi(o)}{esLocal(o.location, o.modalidad, cfg) && <span title="De tu zona (presencial/híbrido viable)" style="margin-left:6px; font-size:.85rem;">📍</span>}</td>
+                <td style={`text-transform:capitalize; font-weight:600; ${o.status === 'aplicada' ? 'color:var(--color-good);' : o.status === 'generada' ? 'color:var(--color-primary);' : o.status === 'nueva' ? 'color:#4aa3ff;' : 'color:var(--color-muted);'}`}>{o.status}</td>
+                <td style="color:var(--color-muted);">{o.source}</td>
+                <td style="white-space:nowrap; color:var(--color-muted);">{o.visto}</td>
+                <td style={`white-space:nowrap; padding-right:14px; font-weight:${(o.cerrada && abierta(o)) ? '600' : '400'}; color:${limColor(o)};`}>{limText(o)}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colspan="8" style="padding:16px; color:var(--color-muted);">Sin resultados.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pager" style="justify-content:center; margin-top:20px;">
+        {page > 0 ? <a href={pageHref(page - 1)} class="pg">← Anterior</a> : <span class="pg pg-off">← Anterior</span>}
+        <span class="pg-num">Página {page + 1}</span>
+        {hasMore ? <a href={pageHref(page + 1)} class="pg">Siguiente →</a> : <span class="pg pg-off">Siguiente →</span>}
+      </div>
+
+      <div class="leyenda">
+        <span class="leyenda-btn">ⓘ Leyenda de colores</span>
+        <div class="leyenda-pop">
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; font-size:.78rem; color:var(--color-muted); margin-bottom:9px;">
+            <strong style="color:var(--color-text); font-weight:600;">Estado:</strong>
+            <span class="lg"><span class="dot" style="background:#4aa3ff;"></span> nueva (sin puntuar)</span>
+            <span class="lg"><span class="dot" style="background:var(--color-good);"></span> aplicada</span>
+            <span class="lg"><span class="dot" style="background:var(--color-primary);"></span> CV generado</span>
+            <span class="lg">📍 de tu zona</span>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; font-size:.78rem; color:var(--color-muted);">
+            <strong style="color:var(--color-text); font-weight:600;">Fecha límite:</strong>
+            <span class="lg"><span class="dot" style="background:var(--color-muted);"></span> +14 días</span>
+            <span class="lg"><span class="dot" style="background:#e3b341;"></span> 8–14 días</span>
+            <span class="lg"><span class="dot" style="background:var(--color-mid);"></span> 4–7 días</span>
+            <span class="lg"><span class="dot" style="background:var(--color-danger);"></span> ≤3 días o cerrada</span>
+          </div>
+        </div>
+      </div>
+    </>
+  )}
+
+<style>
+  table.ofertas th, table.ofertas td { padding: 9px 14px; }
+  table.ofertas thead th { border-bottom: 1px solid var(--color-border); padding-bottom: 11px; }
+  table.ofertas td:nth-child(2) { min-width: 210px; }
+  .pager { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .pg { display: inline-flex; align-items: center; justify-content: center; min-width: 118px; padding: 9px 18px; border: 1px solid var(--color-border); border-radius: 9px; font-size: .86rem; font-weight: 600; color: var(--color-text); background: var(--color-surface-2); transition: border-color .15s, color .15s; }
+  .pg:hover { border-color: var(--color-primary); color: var(--color-primary); }
+  .pg-off { opacity: .35; pointer-events: none; }
+  .pg-num { color: var(--color-muted); font-size: .84rem; min-width: 76px; text-align: center; }
+  .pg-sm { min-width: auto; padding: 6px 13px; font-weight: 500; }
+  .lg { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+  .leyenda { position: relative; display: inline-block; margin-top: 18px; }
+  .leyenda-btn { color: var(--color-muted); font-size: .8rem; cursor: help; border-bottom: 1px dashed var(--color-border); padding-bottom: 2px; }
+  .leyenda:hover .leyenda-btn { color: var(--color-text); }
+  .leyenda-pop { display: none; position: absolute; bottom: 100%; left: 0; margin-bottom: 8px; background: #14181f; border: 1px solid var(--color-border); border-radius: 10px; padding: 12px 14px; box-shadow: 0 14px 44px rgba(0,0,0,.55); z-index: 30; width: max-content; max-width: 90vw; }
+  .leyenda:hover .leyenda-pop { display: block; }
+</style>
+</Base>

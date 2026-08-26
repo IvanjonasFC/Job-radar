@@ -1,0 +1,79 @@
+---
+// Header horizontal glass como el portfolio: fijo arriba, se encoge a pildora flotante al bajar.
+// Layout critico en estilos EN LINEA (garantizado); la variante .small y el nav van en global.css.
+import '../styles/global.css';
+import { SITE } from '../data/site';
+import { authEnabled } from '../lib/auth';
+
+interface Props { title?: string; }
+const { title = 'CRM Empleo' } = Astro.props;
+const path = Astro.url.pathname;
+const nav = [
+  { href: '/', label: 'Hoy' },
+  { href: '/ofertas', label: 'Ofertas' },
+  { href: '/pipeline', label: 'Pipeline' },
+  { href: '/analiticas', label: 'Analíticas' },
+  { href: '/configuracion', label: 'Config' },
+];
+const showLogout = authEnabled();
+const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
+---
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <link rel="preconnect" href="https://fonts.bunny.net" />
+    <link href="https://fonts.bunny.net/css?family=inter:400,500,600|space-grotesk:500,700" rel="stylesheet" />
+    <title>{title} · {SITE.marca}</title>
+  </head>
+  <body>
+    <header id="site-header" style="position:fixed; top:0; left:0; width:100%; z-index:50; padding:18px 0; transition:padding .3s ease;">
+      <div id="header-inner" style="max-width:1560px; margin:0 auto; padding:0 32px; display:flex; align-items:center; gap:28px; border:1px solid transparent; border-radius:999px; transition:max-width .3s ease, padding .3s ease, background .3s ease, box-shadow .3s ease, border-color .3s ease;">
+        <a href="/" style="font-family:var(--font-display); font-weight:700; font-size:1.2rem; letter-spacing:-0.02em; white-space:nowrap; color:var(--color-text);">Empleo <span class="text-gradient">{SITE.titular}</span></a>
+        <nav style="display:flex; gap:4px; align-items:center;">
+          {nav.map((n) => (
+            <a href={n.href} class:list={["nav-link", { active: isActive(n.href) }]}>{n.label}</a>
+          ))}
+        </nav>
+        <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+          <button id="reanalizar" class="hdr-btn hdr-btn-primary" title="Ejecuta el radar en n8n: busca ofertas NUEVAS (RSS) y las puntúa con IA. Luego pulsa Actualizar para verlas.">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><circle cx="12" cy="12" r="2"/><path d="m13.41 10.59 5.66-5.66"/></svg>
+            <span id="reanalizar-label">Analizar</span>
+          </button>
+          <button id="refrescar" class="hdr-btn" title="Recarga la página con los últimos datos de la BD (no busca ofertas nuevas; solo refresca la vista).">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+            <span>Actualizar</span>
+          </button>
+          {showLogout && <a href="/api/logout" class="hdr-btn" title="Cerrar sesión">Salir</a>}
+        </div>
+      </div>
+    </header>
+    <main style="max-width:1560px; margin:0 auto; padding:104px 32px 60px;">
+      <slot />
+    </main>
+    <script is:inline>
+      (function () {
+        var h = document.getElementById('site-header');
+        function onScroll() { if (h) h.classList.toggle('small', window.scrollY > 20); }
+        window.addEventListener('scroll', onScroll, { passive: true });
+        onScroll();
+
+        // Actualizar (recarga ya)
+        var rf = document.getElementById('refrescar');
+        if (rf) rf.onclick = function () { location.reload(); };
+
+        // Re-analizar (dispara el radar WF1 en n8n) + recarga a los 5s
+        var ra = document.getElementById('reanalizar');
+        if (ra) ra.onclick = function () {
+          var lbl = document.getElementById('reanalizar-label');
+          ra.disabled = true; if (lbl) lbl.textContent = 'Analizando...';
+          fetch('/api/n8n', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'accion=radar' })
+            .catch(function () {})
+            .finally(function () { setTimeout(function () { location.reload(); }, 6000); });
+        };
+      })();
+    </script>
+  </body>
+</html>

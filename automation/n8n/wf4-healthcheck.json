@@ -1,0 +1,87 @@
+{
+  "name": "WF4 Healthcheck",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "h00-manual",
+      "name": "Probar ahora",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-720, 180]
+    },
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "cronExpression", "expression": "0 8 * * *" } ] }
+      },
+      "id": "h01-cron",
+      "name": "Cada dia 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-720, 20]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT (SELECT count(*) FROM empleo.job_offers WHERE first_seen >= now() - interval '24 hours') AS nuevas_24h, (SELECT count(*) FROM empleo.job_offers WHERE status <> 'nueva' AND updated_at >= now() - interval '24 hours') AS procesadas_24h, (SELECT count(*) FROM empleo.job_offers WHERE status='nueva') AS backlog_nuevas, (SELECT count(*) FROM empleo.job_offers WHERE status IN ('evaluada','notificada') AND first_seen >= now() - interval '10 days') AS abiertas;",
+        "options": {}
+      },
+      "id": "h02-db",
+      "name": "DB salud",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-460, 100],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json || {};\nconst nuevas = Number(r.nuevas_24h) || 0;\nconst proc = Number(r.procesadas_24h) || 0;\nconst backlog = Number(r.backlog_nuevas) || 0;\nconst abiertas = Number(r.abiertas) || 0;\nconst NL = String.fromCharCode(10);\nconst al = [];\nif (nuevas === 0) al.push('- Sin ofertas NUEVAS ingeridas en 24h (scraper o RSS caido?)');\nif (proc === 0) al.push('- Ninguna oferta puntuada en 24h (WF1 / worker / IA parados?)');\nif (backlog > 50) al.push('- Backlog de ' + backlog + ' ofertas en estado nueva sin puntuar (scoring atascado?)');\nif (!al.length) return [];\nconst text = '⚠️ Empleo IA - healthcheck' + NL + al.join(NL) + NL + '(nuevas24h=' + nuevas + ', procesadas24h=' + proc + ', backlog=' + backlog + ', abiertas=' + abiertas + ')';\nreturn [{ json: { text: text } }];"
+      },
+      "id": "h03-eval",
+      "name": "Evaluar salud",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-200, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cms.example.com/tgapi/botYOUR_TELEGRAM_BOT_TOKEN/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"YOUR_TELEGRAM_CHAT_ID\",\n  \"text\": {{ JSON.stringify($json.text) }},\n  \"disable_web_page_preview\": true\n}",
+        "options": {}
+      },
+      "id": "h04-tg",
+      "name": "Avisar (tgapi)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [60, 100],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE empleo.job_offers SET status='caducada', updated_at=now() WHERE status IN ('evaluada','notificada') AND first_seen < now() - interval '30 days';",
+        "options": {}
+      },
+      "id": "h05-caducar",
+      "name": "Caducar antiguas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-460, 320],
+      "credentials": { "postgres": { "id": "fNCgxp2Pd4DSfmsf", "name": "Postgres account 2" } },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Probar ahora": { "main": [[{ "node": "DB salud", "type": "main", "index": 0 }, { "node": "Caducar antiguas", "type": "main", "index": 0 }]] },
+    "Cada dia 08:00": { "main": [[{ "node": "DB salud", "type": "main", "index": 0 }, { "node": "Caducar antiguas", "type": "main", "index": 0 }]] },
+    "DB salud": { "main": [[{ "node": "Evaluar salud", "type": "main", "index": 0 }]] },
+    "Evaluar salud": { "main": [[{ "node": "Avisar (tgapi)", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

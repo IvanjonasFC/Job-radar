@@ -1,0 +1,295 @@
+---
+// Analíticas del CRM · datos en vivo de la BD `empleo`.
+// Diseñado para RESPONDER preguntas accionables: ¿dónde se cae mi embudo?, ¿qué tecnologías
+// pide el mercado?, ¿postulo lo bueno?, ¿está fresco el sistema?, ¿qué caduca ya?
+import Base from '../layouts/Base.astro';
+import { sql } from '../lib/db';
+
+let err: string | null = null;
+let cab: any = {}, fun: any = {}, ent: any = {}, salud: any = {};
+let porScore: any[] = [], porFuente: any[] = [], porModalidad: any[] = [], tech: any[] = [];
+let semanas: any[] = [];
+let velDias: number | null = null, velN = 0, ttaDias: number | null = null, ttaN = 0;
+let resp: any = { aplicadas: 0, con_respuesta: 0 };
+
+try {
+  // --- Cabecera: KPIs accionables de un vistazo ---
+  const c = await sql<any[]>`
+    SELECT
+      (SELECT count(*) FROM empleo.job_offers WHERE status NOT IN ('caducada','descartada'))::int AS activas,
+      (SELECT count(*) FROM empleo.job_offers WHERE first_seen > now() - interval '7 days')::int AS nuevas7,
+      (SELECT count(*) FROM empleo.job_offers
+         WHERE status IN ('evaluada','notificada','generada') AND score >= 80
+           AND COALESCE(posted_at, first_seen::date) > current_date - 30)::int AS top_sin_postular,
+      (SELECT count(*) FROM empleo.job_offers
+         WHERE status IN ('evaluada','notificada','generada')
+           AND COALESCE(posted_at, first_seen::date) < current_date - 23)::int AS caducan_pronto`;
+  cab = c[0] ?? {};
+
+  // --- Embudo de conversión REAL (por marcas de tiempo: cuántas "llegaron a" cada fase) ---
+  const f = await sql<any[]>`
+    SELECT
+      count(*)::int                                       AS detectadas,
+      count(*) FILTER (WHERE score IS NOT NULL)::int      AS puntuadas,
+      count(*) FILTER (WHERE notified_at IS NOT NULL)::int AS notificadas,
+      count(*) FILTER (WHERE generated_at IS NOT NULL)::int AS cv,
+      count(*) FILTER (WHERE applied_at IS NOT NULL)::int  AS postuladas
+    FROM empleo.job_offers`;
+  fun = f[0] ?? {};
+  const e = await sql<any[]>`
+    SELECT
+      count(*) FILTER (WHERE stage IN ('prueba_tecnica','entrevista_tecnica','entrevista_rrhh','oferta','aceptada'))::int AS entrevista,
+      count(*) FILTER (WHERE stage IN ('oferta','aceptada'))::int AS oferta
+    FROM empleo.applications`;
+  ent = e[0] ?? {};
+
+  // --- Tasa y velocidad de respuesta ---
+  const r = await sql<any[]>`
+    SELECT count(*)::int aplicadas,
+      count(*) FILTER (WHERE stage IS NOT NULL AND stage <> 'postulada')::int con_respuesta
+    FROM empleo.applications`;
+  resp = r[0] ?? resp;
+  const vel = await sql<any[]>`
+    SELECT round(avg(EXTRACT(EPOCH FROM (updated_at - applied_at)) / 86400)::numeric, 1) dias, count(*)::int n
+    FROM empleo.applications
+    WHERE stage IS NOT NULL AND stage <> 'postulada' AND applied_at IS NOT NULL AND updated_at > applied_at`;
+  velDias = vel[0]?.dias ?? null; velN = vel[0]?.n ?? 0;
+
+  // --- Tiempo desde que se detecta hasta que postulas (cuánto tardas en reaccionar) ---
+  const t = await sql<any[]>`
+    SELECT round(avg(EXTRACT(EPOCH FROM (applied_at - first_seen)) / 86400)::numeric, 1) dias, count(*)::int n
+    FROM empleo.job_offers WHERE applied_at IS NOT NULL AND applied_at > first_seen`;
+  ttaDias = t[0]?.dias ?? null; ttaN = t[0]?.n ?? 0;
+
+  // --- Tendencia: ofertas nuevas vs postuladas por semana (últimas 8) ---
+  const nv = await sql<any[]>`
+    SELECT to_char(date_trunc('week', first_seen),'YYYY-MM-DD') wk, count(*)::int c
+    FROM empleo.job_offers WHERE first_seen > now() - interval '8 weeks' GROUP BY 1`;
+  const ap = await sql<any[]>`
+    SELECT to_char(date_trunc('week', applied_at),'YYYY-MM-DD') wk, count(*)::int c
+    FROM empleo.applications WHERE applied_at > now() - interval '8 weeks' GROUP BY 1`;
+  const mapN: Record<string, number> = {}; for (const x of nv) mapN[x.wk] = x.c;
+  const mapA: Record<string, number> = {}; for (const x of ap) mapA[x.wk] = x.c;
+  const wks = Array.from(new Set([...Object.keys(mapN), ...Object.keys(mapA)])).sort();
+  semanas = wks.slice(-8).map((w) => ({ wk: w, nuevas: mapN[w] || 0, postuladas: mapA[w] || 0 }));
+
+  // --- Tecnologías más demandadas en ofertas abiertas (orienta tu upskilling) ---
+  tech = await sql<any[]>`
+    SELECT lower(trim(k)) AS tech, count(*)::int c
+    FROM empleo.job_offers, regexp_split_to_table(COALESCE(keywords,''), ',') AS k
+    WHERE status NOT IN ('caducada','descartada') AND trim(k) <> ''
+    GROUP BY 1 ORDER BY c DESC, tech LIMIT 16`;
+
+  // --- Conversión por tramo de encaje ---
+  porScore = await sql<any[]>`
+    SELECT CASE WHEN score >= 80 THEN '≥80' WHEN score >= 60 THEN '60–79' WHEN score >= 40 THEN '40–59' ELSE '<40' END AS bucket,
+           count(*) FILTER (WHERE status <> 'caducada')::int AS total,
+           count(*) FILTER (WHERE applied_at IS NOT NULL)::int AS aplicadas,
+           min(score)::int AS ord
+    FROM empleo.job_offers WHERE score IS NOT NULL GROUP BY 1 ORDER BY ord DESC`;
+
+  porFuente = await sql<any[]>`
+    SELECT source, count(*)::int total,
+      count(*) FILTER (WHERE applied_at IS NOT NULL)::int aplicadas,
+      count(*) FILTER (WHERE generated_at IS NOT NULL)::int cv,
+      round(avg(score))::int score_medio
+    FROM empleo.job_offers WHERE source IS NOT NULL AND status <> 'caducada' GROUP BY source ORDER BY total DESC`;
+
+  porModalidad = await sql<any[]>`
+    SELECT CASE WHEN modalidad ~* 'remot|teletrab' THEN 'Remoto'
+                WHEN modalidad ~* 'hibrid|semipres' THEN 'Híbrido'
+                WHEN modalidad ~* 'presencial' THEN 'Presencial' ELSE 'N/D' END AS modalidad,
+      count(*)::int total, count(*) FILTER (WHERE applied_at IS NOT NULL)::int aplicadas
+    FROM empleo.job_offers WHERE status <> 'caducada' GROUP BY 1 ORDER BY total DESC`;
+
+  // --- Salud del sistema (¿está entrando fruta fresca? ¿la IA puntúa?) ---
+  const s = await sql<any[]>`
+    SELECT
+      round(EXTRACT(EPOCH FROM (now() - max(first_seen))) / 3600)::int AS horas_ultima,
+      count(*) FILTER (WHERE first_seen > now() - interval '24 hours')::int AS nuevas24,
+      count(*) FILTER (WHERE score IS NULL AND status NOT IN ('caducada','descartada'))::int AS sin_puntuar,
+      count(*) FILTER (WHERE verdict = 'sin_ia')::int AS ia_fallo
+    FROM empleo.job_offers`;
+  salud = s[0] ?? {};
+} catch (ex: any) { err = ex?.message ?? String(ex); }
+
+const tasa = resp.aplicadas > 0 ? Math.round((resp.con_respuesta / resp.aplicadas) * 100) : 0;
+const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
+const bar = (v: number, max: number, color = 'var(--color-primary)') =>
+  `height:8px; border-radius:6px; background:${color}; width:${Math.max(3, Math.round((v / Math.max(1, max)) * 100))}%;`;
+
+// Embudo como pasos con conversión entre fase y fase
+const pasos = [
+  { k: 'Detectadas', v: Number(fun.detectadas) || 0 },
+  { k: 'Puntuadas (IA)', v: Number(fun.puntuadas) || 0 },
+  { k: 'Notificadas', v: Number(fun.notificadas) || 0 },
+  { k: 'CV generado', v: Number(fun.cv) || 0 },
+  { k: 'Postuladas', v: Number(fun.postuladas) || 0 },
+  { k: 'Entrevista', v: Number(ent.entrevista) || 0 },
+  { k: 'Oferta', v: Number(ent.oferta) || 0 },
+];
+const maxPaso = Math.max(1, ...pasos.map((p) => p.v));
+const maxTech = Math.max(1, ...tech.map((t) => t.c));
+const maxSem = Math.max(1, ...semanas.flatMap((s) => [s.nuevas, s.postuladas]));
+const maxFu = Math.max(1, ...porFuente.map((x) => x.total));
+
+const cabecera = [
+  { label: 'Convocatorias activas', value: cab.activas ?? 0, hint: '/ofertas' },
+  { label: 'Nuevas (7 días)', value: cab.nuevas7 ?? 0, hint: '/ofertas?sort=nuevas' },
+  { label: 'Score ≥80 sin postular', value: cab.top_sin_postular ?? 0, accent: true, hint: '/ofertas?min=80&sort=encaje' },
+  { label: 'Tasa de respuesta', value: tasa + '%', hint: '/pipeline' },
+  { label: 'Velocidad de respuesta', value: velDias != null ? `${velDias} d` : '—', sub: `${velN} respuestas`, hint: '/pipeline' },
+  { label: 'Caducan en <7 días', value: cab.caducan_pronto ?? 0, danger: (cab.caducan_pronto ?? 0) > 0, hint: '/ofertas' },
+];
+---
+<Base title="Analíticas">
+  <h1 style="margin:0 0 4px;">Analíticas</h1>
+  <p style="color:var(--color-muted); margin:0 0 22px;">Qué funciona en tu búsqueda y dónde actuar · datos en vivo</p>
+  {err && <div class="card" style="padding:16px; border-color:var(--color-danger); color:var(--color-danger);">{err}</div>}
+  {!err && (
+    <>
+      <!-- Cabecera KPIs -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:22px;">
+        {cabecera.map((k) => (
+          <a href={k.hint} class="card" style="padding:16px 18px; display:block;">
+            <div style="color:var(--color-muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.06em;">{k.label}</div>
+            <div style={`font-family:var(--font-display); font-size:2rem; font-weight:700; line-height:1.15; margin-top:4px; ${k.accent ? 'background:linear-gradient(135deg,var(--color-primary),var(--color-primary-2)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;' : k.danger ? 'color:var(--color-danger);' : 'color:var(--color-text);'}`}>{k.value}</div>
+            {k.sub && <div style="color:var(--color-muted); font-size:.76rem;">{k.sub}</div>}
+          </a>
+        ))}
+      </div>
+
+      <!-- Embudo de conversión -->
+      <div class="card" style="padding:18px; margin-bottom:16px;">
+        <h3 style="margin:0 0 4px; font-size:1rem;">Embudo de conversión</h3>
+        <p style="color:var(--color-muted); font-size:.8rem; margin:0 0 14px;">De oferta detectada a oferta de empleo. El % es cuánto sobrevive de la fase anterior — ahí ves dónde se cae tu búsqueda.</p>
+        {pasos.map((p, i) => (
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:9px;">
+            <span style="width:130px; font-size:.84rem;">{p.k}</span>
+            <div style="flex:1; background:var(--color-surface-2); border-radius:6px;"><div style={bar(p.v, maxPaso, i >= 4 ? 'var(--color-good)' : 'var(--color-primary)')}></div></div>
+            <span style="width:52px; text-align:right; font-weight:600;">{p.v}</span>
+            <span style="width:60px; text-align:right; color:var(--color-muted); font-size:.78rem;">{i === 0 ? '' : pct(p.v, pasos[i - 1].v) + '%'}</span>
+          </div>
+        ))}
+      </div>
+
+      <!-- Fila 1: Tecnologías (alta) | Actividad + Reacción (apiladas) -->
+      <div style="display:grid; grid-template-columns:1.05fr 1fr; gap:16px; align-items:stretch; margin-bottom:16px;">
+        <div class="card" style="padding:18px; display:flex; flex-direction:column;">
+          <h3 style="margin:0 0 4px; font-size:1rem;">Tecnologías más pedidas</h3>
+          <p style="color:var(--color-muted); font-size:.8rem; margin:0 0 12px;">Lo que más aparece en tus ofertas abiertas. Prioriza estas en tu CV y tu upskilling.</p>
+          {tech.length === 0 && <p style="color:var(--color-muted);">Sin keywords aún.</p>}
+          {tech.slice(0, 12).map((t) => (
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:7px;">
+              <span style="width:120px; font-size:.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-transform:capitalize;">{t.tech}</span>
+              <div style="flex:1; background:var(--color-surface-2); border-radius:6px;"><div style={bar(t.c, maxTech)}></div></div>
+              <span style="width:30px; text-align:right; color:var(--color-muted);">{t.c}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:16px;">
+          <div class="card" style="padding:18px;">
+            <h3 style="margin:0 0 4px; font-size:1rem;">Actividad por semana</h3>
+            <p style="color:var(--color-muted); font-size:.8rem; margin:0 0 14px;"><span style="color:var(--color-primary);">▮</span> nuevas · <span style="color:var(--color-good);">▮</span> postuladas</p>
+            {semanas.length === 0 && <p style="color:var(--color-muted);">Sin datos aún.</p>}
+            <div style="display:flex; align-items:flex-end; gap:8px; height:120px;">
+              {semanas.map((s) => (
+                <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; height:100%; justify-content:flex-end;">
+                  <div style="display:flex; align-items:flex-end; gap:3px; height:100%;">
+                    <div title={`${s.nuevas} nuevas`} style={`width:11px; background:var(--color-primary); border-radius:3px 3px 0 0; height:${Math.round((s.nuevas / maxSem) * 100)}%; min-height:2px;`}></div>
+                    <div title={`${s.postuladas} postuladas`} style={`width:11px; background:var(--color-good); border-radius:3px 3px 0 0; height:${Math.round((s.postuladas / maxSem) * 100)}%; min-height:2px;`}></div>
+                  </div>
+                  <span style="color:var(--color-muted); font-size:.66rem; white-space:nowrap;">{s.wk.slice(5)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div class="card" style="padding:18px; flex:1; display:flex; flex-direction:column; justify-content:center;">
+            <h3 style="margin:0 0 10px; font-size:1rem;">Tu tiempo de reacción</h3>
+            <div style="display:flex; align-items:baseline; gap:8px;">
+              <span style="font-family:var(--font-display); font-size:2.4rem; font-weight:700; color:var(--color-text);">{ttaDias != null ? ttaDias : '—'}</span>
+              <span style="color:var(--color-muted);">días de media entre detectar y postular</span>
+            </div>
+            <p style="color:var(--color-muted); font-size:.8rem; margin:8px 0 0;">{ttaN} candidaturas medidas. Cuanto menos, mejor: las buenas se cierran rápido.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Conversión por encaje (ancho completo) -->
+      <div class="card" style="padding:18px; margin-bottom:16px;">
+        <h3 style="margin:0 0 4px; font-size:1rem;">Conversión por encaje</h3>
+        <p style="color:var(--color-muted); font-size:.8rem; margin:0 0 12px;">¿Postulas más a las de score alto? Deberías: son las que más encajan.</p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px;">
+          {porScore.map((s) => (
+            <div style="border:1px solid var(--color-border); border-radius:10px; padding:12px;">
+              <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                <span style="font-family:var(--font-display); font-weight:700; font-size:1.1rem;">{s.bucket}</span>
+                <span style="color:var(--color-muted); font-size:.8rem;">{s.total} ofertas</span>
+              </div>
+              <div style="margin-top:8px; background:var(--color-surface-2); border-radius:6px;"><div style={bar(s.aplicadas, Math.max(1, s.total), 'var(--color-good)')}></div></div>
+              <div style="color:var(--color-muted); font-size:.8rem; margin-top:6px;"><strong style="color:var(--color-good);">{s.aplicadas}</strong> aplicadas · {pct(s.aplicadas, s.total)}%</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- Fila 2: Modalidad | Salud del sistema -->
+      <div style="display:grid; grid-template-columns:1fr 1.4fr; gap:16px; align-items:stretch; margin-bottom:16px;">
+        <div class="card" style="padding:18px; display:flex; flex-direction:column;">
+          <h3 style="margin:0 0 12px; font-size:1rem;">Por modalidad</h3>
+          {porModalidad.map((m) => (
+            <div style="display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--color-border); font-size:.88rem;">
+              <span style="text-transform:capitalize;">{m.modalidad}</span>
+              <span style="color:var(--color-muted);">{m.total} · <strong style="color:var(--color-good);">{m.aplicadas} aplicadas</strong></span>
+            </div>
+          ))}
+        </div>
+
+        <div class="card" style="padding:18px; display:flex; flex-direction:column;">
+          <h3 style="margin:0 0 12px; font-size:1rem;">Salud del sistema</h3>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; flex:1;">
+            <div style="border:1px solid var(--color-border); border-radius:10px; padding:12px;">
+              <div style="color:var(--color-muted); font-size:.74rem;">Última oferta detectada</div>
+              <div style={`font-family:var(--font-display); font-size:1.5rem; font-weight:700; ${(salud.horas_ultima ?? 999) > 48 ? 'color:var(--color-danger);' : 'color:var(--color-good);'}`}>{salud.horas_ultima != null ? `hace ${salud.horas_ultima} h` : '—'}</div>
+              <div style="color:var(--color-muted); font-size:.76rem;">{salud.nuevas24 ?? 0} en las últimas 24 h</div>
+            </div>
+            <div style="border:1px solid var(--color-border); border-radius:10px; padding:12px;">
+              <div style="color:var(--color-muted); font-size:.74rem;">Sin puntuar por IA</div>
+              <div style={`font-family:var(--font-display); font-size:1.5rem; font-weight:700; ${(salud.sin_puntuar ?? 0) > 0 ? 'color:var(--color-mid);' : 'color:var(--color-good);'}`}>{salud.sin_puntuar ?? 0}</div>
+              <div style="color:var(--color-muted); font-size:.76rem;">pendientes de evaluar</div>
+            </div>
+            <div style="border:1px solid var(--color-border); border-radius:10px; padding:12px;">
+              <div style="color:var(--color-muted); font-size:.74rem;">Fallos de IA (sin_ia)</div>
+              <div style={`font-family:var(--font-display); font-size:1.5rem; font-weight:700; ${(salud.ia_fallo ?? 0) > 0 ? 'color:var(--color-mid);' : 'color:var(--color-good);'}`}>{salud.ia_fallo ?? 0}</div>
+              <div style="color:var(--color-muted); font-size:.76rem;">reintenta el análisis si sube</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Por fuente (ancho completo) -->
+      <div class="card" style="padding:18px;">
+        <h3 style="margin:0 0 12px; font-size:1rem;">Por fuente (dónde salen tus mejores ofertas)</h3>
+        <div style="overflow:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:.88rem;">
+            <thead><tr style="text-align:left; color:var(--color-muted);"><th style="padding:6px 10px;">Fuente</th><th>Total</th><th>CV generados</th><th>Aplicadas</th><th>Encaje medio</th><th style="width:30%;">Volumen</th></tr></thead>
+            <tbody>
+              {porFuente.map((f) => (
+                <tr style="border-top:1px solid var(--color-border);">
+                  <td style="padding:8px 10px; text-transform:capitalize;">{f.source}</td>
+                  <td>{f.total}</td>
+                  <td>{f.cv}</td>
+                  <td style="color:var(--color-good); font-weight:600;">{f.aplicadas}</td>
+                  <td>{f.score_medio ?? '—'}</td>
+                  <td><div style="background:var(--color-surface-2); border-radius:6px;"><div style={bar(f.total, maxFu)}></div></div></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  )}
+</Base>

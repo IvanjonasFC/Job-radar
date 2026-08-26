@@ -1,0 +1,164 @@
+---
+import Base from '../layouts/Base.astro';
+import { sql } from '../lib/db';
+import { ubi } from '../lib/loc';
+import { getConfig, esLocal } from '../lib/config';
+
+let cola: any[] = [];
+let seg: any[] = [];
+let entrev: any[] = [];
+let m: any = {};
+let err: string | null = null;
+const cfg = await getConfig();
+try {
+  // COLA DE HOY: abiertas (no aplicadas), frescas (<30d), mejor score primero.
+  cola = await sql<any[]>`
+    SELECT id, title, company, location, modalidad, score, status,
+           to_char(COALESCE(posted_at, first_seen),'YYYY-MM-DD') AS pub
+    FROM empleo.job_offers
+    WHERE status IN ('evaluada','notificada','generada')
+      AND COALESCE(posted_at, first_seen) > now() - interval '30 days'
+    ORDER BY score DESC NULLS LAST, COALESCE(posted_at, first_seen) DESC
+    LIMIT 12`;
+
+  // SEGUIMIENTOS: candidaturas postuladas con acción vencida/próxima, o +7 días sin respuesta.
+  seg = await sql<any[]>`
+    SELECT offer_id, company, title, proxima_accion,
+           to_char(fecha_proxima,'YYYY-MM-DD') AS fprox,
+           (current_date - applied_at::date) AS dias,
+           (fecha_proxima IS NOT NULL AND fecha_proxima < current_date) AS vencida
+    FROM empleo.applications
+    WHERE COALESCE(stage,'postulada') = 'postulada'
+      AND (
+        (fecha_proxima IS NOT NULL AND fecha_proxima <= current_date + 1)
+        OR (fecha_proxima IS NULL AND applied_at < now() - interval '7 days')
+      )
+    ORDER BY vencida DESC, fecha_proxima ASC NULLS LAST, applied_at ASC
+    LIMIT 8`;
+
+  // PRÓXIMAS ENTREVISTAS.
+  entrev = await sql<any[]>`
+    SELECT offer_id, company, title, to_char(fecha_entrevista,'YYYY-MM-DD') AS fecha,
+           (fecha_entrevista - current_date) AS dias
+    FROM empleo.applications
+    WHERE fecha_entrevista IS NOT NULL AND fecha_entrevista >= current_date
+    ORDER BY fecha_entrevista ASC LIMIT 6`;
+
+  const r = await sql<any[]>`
+    SELECT
+      (SELECT count(*) FROM empleo.job_offers WHERE status IN ('evaluada','notificada','generada') AND score >= ${cfg.min_score_cola} AND COALESCE(posted_at, first_seen) > now() - interval '30 days') AS top_sin_postular,
+      (SELECT count(*) FROM empleo.applications WHERE COALESCE(stage,'postulada')='postulada' AND ((fecha_proxima IS NOT NULL AND fecha_proxima <= current_date + 1) OR (fecha_proxima IS NULL AND applied_at < now() - interval '7 days'))) AS seguimiento,
+      (SELECT count(*) FROM empleo.job_offers WHERE first_seen > now() - interval '24 hours') AS nuevas_24h,
+      (SELECT count(*) FROM empleo.applications) AS aplicadas,
+      (SELECT count(*) FROM empleo.applications WHERE stage IS NOT NULL AND stage <> 'postulada') AS con_respuesta`;
+  m = r[0] ?? {};
+} catch (e: any) { err = e?.message ?? String(e); }
+
+const tasa = Number(m.aplicadas) > 0 ? Math.round((Number(m.con_respuesta) / Number(m.aplicadas)) * 100) : 0;
+const badge = (s: number) => (s >= 80 ? 'badge-good' : s >= 60 ? 'badge-mid' : 'badge-low');
+const kpis = [
+  { label: `Score ≥${cfg.min_score_cola} sin postular`, value: Number(m.top_sin_postular) || 0, accent: true, sub: 'ver y aplicar →', hint: `/ofertas?min=${cfg.min_score_cola}&sort=encaje` },
+  { label: 'Seguimientos pendientes', value: Number(m.seguimiento) || 0, danger: (Number(m.seguimiento) || 0) > 0, sub: 'perseguir en pipeline →', hint: '/pipeline' },
+  { label: 'Tasa de respuesta', value: tasa + '%', sub: `${Number(m.con_respuesta)||0}/${Number(m.aplicadas)||0} candidaturas`, hint: '/analiticas' },
+  { label: 'Nuevas (24 h)', value: Number(m.nuevas_24h) || 0, sub: 'las más recientes →', hint: '/ofertas?sort=reciente' },
+];
+const cerca = cfg.local_region || 'tu zona';
+---
+<Base title="Cola de hoy">
+  <div style="margin-bottom:20px;">
+    <h1 style="margin:0;">Tu cola de <span class="text-gradient">hoy</span></h1>
+    <p style="color:var(--color-muted); margin:4px 0 0;">Aplica a lo mejor y persigue lo que ya postulaste. Todo lo accionable, en un sitio.</p>
+  </div>
+
+  {err && <div class="card" style="padding:16px; border-color:var(--color-danger); color:var(--color-danger);">{err}</div>}
+
+  {!err && (
+    <>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:22px;">
+        {kpis.map((k) => (
+          <a href={k.hint} class="card kpi" style="padding:18px; display:block; position:relative;">
+            <span class="kpi-arrow" style="position:absolute; top:14px; right:16px; color:var(--color-muted); font-size:.95rem;">→</span>
+            <div style="color:var(--color-muted); font-size:.76rem; text-transform:uppercase; letter-spacing:.06em;">{k.label}</div>
+            <div style={`font-family:var(--font-display); font-size:2.3rem; font-weight:700; line-height:1.1; margin-top:6px; ${k.accent ? 'background:linear-gradient(135deg,var(--color-primary),var(--color-primary-2)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;' : k.danger ? 'color:var(--color-danger);' : 'color:var(--color-text);'}`}>{k.value}</div>
+            <div style="color:var(--color-muted); font-size:.74rem; margin-top:4px;">{k.sub}</div>
+          </a>
+        ))}
+      </div>
+
+      <!-- Cola de hoy -->
+      <div class="card" style="padding:0; margin-bottom:18px;">
+        <div style="padding:16px 18px; border-bottom:1px solid var(--color-border); display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="margin:0; font-size:1rem;">Cola de hoy <span style="color:var(--color-muted); font-weight:400;">({cola.length})</span></h3>
+          <a href="/ofertas?sort=encaje" style="font-size:.85rem;">ver todas →</a>
+        </div>
+        <div>
+          {cola.map((o) => (
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 18px; border-bottom:1px solid var(--color-border);">
+              <span class={`badge ${badge(o.score ?? 0)}`}>{o.score ?? 0}</span>
+              <a href={`/ofertas/${o.id}`} style="flex:1; min-width:0; color:var(--color-text);">
+                <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><strong>{o.company}</strong> <span style="color:var(--color-muted);">· {o.title}</span></div>
+                <div style="font-size:.78rem; color:var(--color-muted);">{ubi(o)}{esLocal(o.location, o.modalidad, cfg) && <span title={`Cerca de ti — ${cerca}`} style="color:var(--color-primary);"> · cerca</span>} · publicada {o.pub}{o.status === 'generada' ? ' · CV listo' : ''}</div>
+              </a>
+              <form method="post" action="/api/descartar" style="margin:0;">
+                <input type="hidden" name="id" value={o.id} /><input type="hidden" name="back" value="/" />
+                <button class="btn-descartar" title="Descartar — la quita de todas las vistas" aria-label="Descartar" style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; background:transparent; color:var(--color-muted); border:1px solid var(--color-border); border-radius:8px; cursor:pointer;">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                </button>
+              </form>
+              <form method="post" action="/api/n8n" style="margin:0;">
+                <input type="hidden" name="id" value={o.id} /><input type="hidden" name="back" value="/" /><input type="hidden" name="accion" value="aplicar" />
+                <button style="padding:6px 14px; background:var(--color-good); color:#fff; border:none; border-radius:8px; font-weight:600; font-size:.82rem; cursor:pointer; white-space:nowrap;">Aplicar</button>
+              </form>
+            </div>
+          ))}
+          {cola.length === 0 && <div style="padding:18px; color:var(--color-muted);">No hay ofertas abiertas frescas. Pulsa <strong>Analizar</strong> arriba para buscar nuevas.</div>}
+        </div>
+      </div>
+
+      <!-- Seguimientos + Entrevistas -->
+      <div style="display:grid; grid-template-columns:1.3fr 1fr; gap:16px; align-items:start;">
+        <div class="card" style="padding:0;">
+          <div style="padding:14px 18px; border-bottom:1px solid var(--color-border); display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="margin:0; font-size:1rem;">Seguimientos pendientes <span style="color:var(--color-muted); font-weight:400;">({seg.length})</span></h3>
+            <a href="/pipeline" style="font-size:.82rem;">pipeline →</a>
+          </div>
+          <div>
+            {seg.map((a) => (
+              <a href={`/ofertas/${a.offer_id}`} style="display:flex; align-items:center; gap:12px; padding:11px 18px; border-bottom:1px solid var(--color-border); color:var(--color-text);">
+                <span class={`badge ${a.vencida ? 'badge-mid' : 'badge-low'}`} style={a.vencida ? 'color:var(--color-danger);' : ''}>{a.vencida ? 'vencido' : 'pronto'}</span>
+                <div style="flex:1; min-width:0;">
+                  <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><strong>{a.company}</strong> <span style="color:var(--color-muted);">· {a.title}</span></div>
+                  <div style="font-size:.76rem; color:var(--color-muted);">{a.proxima_accion || 'Hacer seguimiento'}{a.fprox ? ` · ${a.fprox}` : ''} · postulada hace {a.dias} d</div>
+                </div>
+              </a>
+            ))}
+            {seg.length === 0 && <div style="padding:16px 18px; color:var(--color-muted); font-size:.88rem;">Sin seguimientos pendientes. 👌</div>}
+          </div>
+        </div>
+
+        <div class="card" style="padding:0;">
+          <div style="padding:14px 18px; border-bottom:1px solid var(--color-border);">
+            <h3 style="margin:0; font-size:1rem;">Próximas entrevistas <span style="color:var(--color-muted); font-weight:400;">({entrev.length})</span></h3>
+          </div>
+          <div>
+            {entrev.map((a) => (
+              <a href={`/ofertas/${a.offer_id}`} style="display:flex; align-items:center; gap:12px; padding:11px 18px; border-bottom:1px solid var(--color-border); color:var(--color-text);">
+                <span class="badge badge-good">{a.dias === 0 ? 'hoy' : `${a.dias}d`}</span>
+                <div style="flex:1; min-width:0;">
+                  <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><strong>{a.company}</strong></div>
+                  <div style="font-size:.76rem; color:var(--color-muted);">{a.title} · {a.fecha}</div>
+                </div>
+              </a>
+            ))}
+            {entrev.length === 0 && <div style="padding:16px 18px; color:var(--color-muted); font-size:.88rem;">Sin entrevistas programadas.</div>}
+          </div>
+        </div>
+      </div>
+    </>
+  )}
+<style>
+  .btn-descartar:hover { border-color: var(--color-danger); color: var(--color-danger); background: rgba(248,81,73,0.08); }
+  .kpi:hover { transform: translateY(-1px); }
+  .kpi:hover .kpi-arrow { color: var(--color-primary); }
+</style>
+</Base>

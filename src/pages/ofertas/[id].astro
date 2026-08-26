@@ -1,0 +1,196 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getOffer } from '../../lib/queries';
+import { getConfig, esLocal } from '../../lib/config';
+
+const id = Number(Astro.params.id);
+let data: any = null;
+let err: string | null = null;
+try { data = await getOffer(id); } catch (e: any) { err = e?.message ?? String(e); }
+if (!err && !data) return Astro.redirect('/ofertas');
+
+const o = data?.o ?? {};
+const g = data?.g ?? null;
+const a = data?.a ?? {};
+const ai = data?.ai ?? {};
+const cfg = await getConfig();
+const cerca = esLocal(o.location, o.modalidad, cfg);
+const abierta = ['evaluada', 'notificada', 'nueva'].includes(o.status);
+const dcierre = Number(o.dias_cierre);
+const limColor = !abierta ? 'var(--color-muted)' : (o.cerrada || dcierre <= 3 ? 'var(--color-danger)' : dcierre <= 7 ? 'var(--color-mid)' : dcierre <= 14 ? '#e3b341' : 'var(--color-muted)');
+const limTxt = o.cerrada ? 'Cerrada' : (o.cierre ? (abierta ? `${o.cierre} · en ${dcierre} d` : o.cierre) : '—');
+const estColor = o.status === 'aplicada' ? 'var(--color-good)' : o.status === 'generada' ? 'var(--color-primary)' : o.status === 'nueva' ? '#4aa3ff' : (o.status === 'descartada' || o.status === 'caducada') ? 'var(--color-danger)' : 'var(--color-text)';
+const scColor = (o.score ?? 0) >= 80 ? 'var(--color-good)' : (o.score ?? 0) >= 60 ? 'var(--color-mid)' : 'var(--color-low)';
+const vaultFolder = o.vault_path ? String(o.vault_path).split('/').filter(Boolean).slice(-2)[0] : '';
+const badge = (s: number) => (s >= 80 ? 'badge-good' : s >= 60 ? 'badge-mid' : 'badge-low');
+const inp = 'width:100%; padding:8px 10px; background:var(--color-surface-2); border:1px solid var(--color-border); border-radius:8px; color:var(--color-text); box-sizing:border-box;';
+const btn = (bg: string) => `padding:8px 14px; background:${bg}; color:#fff; border:none; border-radius:8px; font-weight:600; cursor:pointer;`;
+const back = `/ofertas/${id}`;
+const fdate = (v: any) => (v ? String(v).slice(0, 10) : '—');
+const chip = 'background:var(--color-surface-2); border:1px solid var(--color-border); border-radius:999px; padding:4px 12px; font-size:.78rem; color:var(--color-muted);';
+const meta = [
+  { k: 'Fuente', v: o.source ?? '—' },
+  { k: 'Encaje', v: `${o.score ?? 0}/100` },
+  { k: 'Detectada', v: fdate(o.first_seen) },
+  { k: 'CV generado', v: fdate(o.generated_at) },
+  { k: 'Postulada', v: fdate(o.applied_at) },
+];
+---
+<Base title={o.title ?? 'Oferta'}>
+  {err && <div class="card" style="padding:16px; border-color:var(--color-danger); color:var(--color-danger);">{err}</div>}
+  {!err && (
+    <>
+      <a href="/ofertas" style="color:var(--color-muted); font-size:.85rem;">← Ofertas</a>
+      <div style="display:flex; align-items:center; gap:12px; margin:8px 0 4px;">
+        <span class={`badge ${badge(o.score ?? 0)}`}>{o.score ?? 0}/100</span>
+        <h1 style="margin:0;">{o.title}</h1>
+      </div>
+      <p style="color:var(--color-muted); margin:0 0 16px;">
+        {o.company} · {o.location} {o.modalidad ? `· ${o.modalidad}` : ''} · {o.status}
+        {o.url && <> · <a href={o.url} target="_blank" rel="noopener">ver oferta ↗</a></>}
+      </p>
+
+      <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+        {meta.map((m) => (
+          <span style={chip}><span style="color:var(--color-muted);">{m.k}:</span> <strong style="color:var(--color-text);">{m.v}</strong></span>
+        ))}
+      </div>
+
+      <div style="display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap;">
+        <form method="post" action="/api/n8n"><input type="hidden" name="id" value={id} /><input type="hidden" name="back" value={back} /><input type="hidden" name="accion" value="generar" /><button style={btn('var(--color-primary)')}>Generar CV</button></form>
+        <form method="post" action="/api/n8n"><input type="hidden" name="id" value={id} /><input type="hidden" name="back" value={back} /><input type="hidden" name="accion" value="aplicar" /><button style={btn('var(--color-good)')}>Aplicar</button></form>
+        <form method="post" action="/api/descartar"><input type="hidden" name="id" value={id} /><input type="hidden" name="back" value={back} /><button style={btn('var(--color-low)')}>Descartar</button></form>
+        <form method="post" action="/api/n8n"><input type="hidden" name="id" value={id} /><input type="hidden" name="back" value={back} /><input type="hidden" name="accion" value="ia" /><input type="hidden" name="tipo" value="entrevista" /><button style="padding:8px 14px; background:var(--color-surface-2); color:var(--color-text); border:1px solid var(--color-border); border-radius:8px; font-weight:600; cursor:pointer;">Preparar entrevista</button></form>
+        <form method="post" action="/api/n8n"><input type="hidden" name="id" value={id} /><input type="hidden" name="back" value={back} /><input type="hidden" name="accion" value="ia" /><input type="hidden" name="tipo" value="carencias" /><button style="padding:8px 14px; background:var(--color-surface-2); color:var(--color-text); border:1px solid var(--color-border); border-radius:8px; font-weight:600; cursor:pointer;">Qué me falta</button></form>
+      </div>
+      <p style="color:var(--color-muted); font-size:.8rem; margin:-8px 0 20px;">Tras pulsar Generar CV / Preparar entrevista / Qué me falta, la IA lo prepara en n8n (unos segundos) → pulsa <strong>Actualizar</strong> arriba para verlo.</p>
+
+      <div style="display:grid; grid-template-columns:2fr 1fr; gap:20px; align-items:start;">
+        <div style="display:flex; flex-direction:column; gap:16px;">
+          <section class="card" style="padding:16px;">
+            <h3 style="margin:0 0 8px;">Por qué encaja <span style="color:var(--color-muted); font-weight:400; font-size:.85rem;">(análisis IA)</span></h3>
+            {o.verdict && <p style="color:var(--color-text); margin:0 0 8px; font-weight:600; text-transform:capitalize;">{o.verdict}</p>}
+            {o.reasons && <p style="color:var(--color-muted); margin:0 0 12px; line-height:1.5;">{o.reasons}</p>}
+            {o.keywords && (
+              <>
+                <div style="color:var(--color-muted); font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px;">Tecnologías clave (resáltalas en tu CV/carta)</div>
+                <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                  {String(o.keywords).split(',').map((k) => k.trim()).filter(Boolean).map((k) => (
+                    <span style="background:var(--color-surface-2); border:1px solid var(--color-border); border-radius:999px; padding:3px 10px; font-size:.76rem; color:var(--color-text);">{k}</span>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+          {ai.carencias && (
+            <section class="card" style="padding:16px;">
+              <h3 style="margin:0 0 8px;">Qué me falta <span style="color:var(--color-muted); font-weight:400; font-size:.85rem;">(IA · {ai.carencias.ia})</span></h3>
+              <pre style="white-space:pre-wrap; font-family:inherit; margin:0; line-height:1.55; color:var(--color-text);">{ai.carencias.texto}</pre>
+            </section>
+          )}
+          {ai.entrevista && (
+            <section class="card" style="padding:16px;">
+              <h3 style="margin:0 0 8px;">Preparación de entrevista <span style="color:var(--color-muted); font-weight:400; font-size:.85rem;">(IA · {ai.entrevista.ia})</span></h3>
+              <pre style="white-space:pre-wrap; font-family:inherit; margin:0; line-height:1.55; color:var(--color-text);">{ai.entrevista.texto}</pre>
+            </section>
+          )}
+          <section id="carta" class="card" style="padding:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <h3 style="margin:0;">Carta de presentación</h3>
+              {g?.carta_md && <button type="button" id="copiar-carta" style="padding:6px 12px; background:var(--color-surface-2); color:var(--color-text); border:1px solid var(--color-border); border-radius:8px; cursor:pointer; font-size:.82rem;">Copiar</button>}
+            </div>
+            {g?.carta_md ? (
+              <form method="post" action="/api/carta">
+                <input type="hidden" name="id" value={id} />
+                <textarea id="carta-text" name="carta_md" rows="16" style={`${inp} line-height:1.55; resize:vertical;`}>{g.carta_md}</textarea>
+                <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
+                  <button style={btn('var(--color-primary)')}>Guardar cambios</button>
+                  <span style="color:var(--color-muted); font-size:.8rem;">Edita la carta y guárdala, o cópiala para enviarla.</span>
+                </div>
+              </form>
+            ) : (
+              <p style="color:var(--color-muted);">Aún no generada. Pulsa <strong>Generar CV</strong> (se crea en n8n y aparece aquí al recargar).</p>
+            )}
+            {g?.asunto && <p style="color:var(--color-muted); margin-top:12px; font-size:.85rem;">Asunto: {g.asunto} · IA: {g.ia}</p>}
+            <p style="color:var(--color-muted); margin-top:10px; font-size:.76rem; line-height:1.5; border-top:1px solid var(--color-border); padding-top:10px;">La carta y los ajustes de CV los genera la IA en n8n y se guardan <strong>aquí</strong> (editable, en la BD) y como <strong>.md en tu vault de Obsidian</strong>{vaultFolder ? <> · carpeta <code>{vaultFolder}</code></> : null}. Editar aquí actualiza esta copia; el .md del vault lo reescribe n8n al regenerar.</p>
+          </section>
+          {g?.cv_ajustes_md && (
+            <section class="card" style="padding:16px;">
+              <h3 style="margin:0 0 8px;">Ajustes de CV</h3>
+              {g?.resumen_cv && <p style="color:var(--color-muted);"><em>{g.resumen_cv}</em></p>}
+              <pre style="white-space:pre-wrap; font-family:inherit; margin:0; line-height:1.5;">{g.cv_ajustes_md}</pre>
+            </section>
+          )}
+          {o.description && (
+            <section class="card" style="padding:16px;">
+              <h3 style="margin:0 0 8px;">Descripción</h3>
+              <p style="color:var(--color-muted); white-space:pre-wrap;">{String(o.description).slice(0, 4000)}</p>
+            </section>
+          )}
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:16px;">
+        <section class="card" style="padding:16px;">
+          <h3 style="margin:0 0 14px; font-size:1rem;">Resumen</h3>
+          <div style="margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:baseline;">
+              <span style="color:var(--color-muted); font-size:.8rem;">Encaje</span>
+              <span style="font-family:var(--font-display); font-weight:700; font-size:1.1rem;">{o.score ?? 0}<span style="color:var(--color-muted); font-weight:400; font-size:.85rem;">/100</span></span>
+            </div>
+            <div style="height:7px; background:var(--color-surface-2); border-radius:6px; margin-top:6px;"><div style={`height:7px; border-radius:6px; width:${o.score ?? 0}%; background:${scColor};`}></div></div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:10px; font-size:.87rem;">
+            <div style="display:flex; justify-content:space-between; gap:10px;"><span style="color:var(--color-muted);">Estado</span><strong style={`text-transform:capitalize; color:${estColor};`}>{o.status}{a?.stage && a.stage !== 'postulada' ? ` · ${String(a.stage).replace(/_/g,' ')}` : ''}</strong></div>
+            <div style="display:flex; justify-content:space-between; gap:10px;"><span style="color:var(--color-muted);">Fecha límite</span><strong style={`color:${limColor};`}>{limTxt}</strong></div>
+            <div style="display:flex; justify-content:space-between; gap:10px;"><span style="color:var(--color-muted);">Modalidad</span><strong style="text-transform:capitalize;">{o.modalidad || '—'}{cerca ? ' 📍' : ''}</strong></div>
+            <div style="display:flex; justify-content:space-between; gap:10px;"><span style="color:var(--color-muted);">Ubicación</span><strong>{o.location || '—'}</strong></div>
+            <div style="display:flex; justify-content:space-between; gap:10px;"><span style="color:var(--color-muted);">Detectada</span><strong>hace {o.dias_detectada} d</strong></div>
+            <div style="display:flex; justify-content:space-between; gap:10px;"><span style="color:var(--color-muted);">Fuente</span><strong style="text-transform:capitalize;">{o.source || '—'}</strong></div>
+            {a?.salario && <div style="display:flex; justify-content:space-between; gap:10px;"><span style="color:var(--color-muted);">Salario</span><strong>{a.salario}</strong></div>}
+            {a?.contacto && <div style="display:flex; justify-content:space-between; gap:10px;"><span style="color:var(--color-muted);">Contacto</span><strong title={a.email_contacto ?? ''}>{a.contacto}</strong></div>}
+            {o.vault_path && <div style="display:flex; justify-content:space-between; gap:10px;"><span style="color:var(--color-muted);">En Obsidian</span><strong title={o.vault_path} style="max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">📁 {vaultFolder}</strong></div>}
+          </div>
+        </section>
+
+        <form method="post" action="/api/guardar" class="card" style="padding:16px; display:flex; flex-direction:column; gap:12px;">
+          <h3 style="margin:0; font-size:1rem;">Seguimiento <span style="color:var(--color-muted); font-weight:400; font-size:.8rem;">(tras aplicar)</span></h3>
+          <input type="hidden" name="id" value={id} />
+          <label style="font-size:.85rem; color:var(--color-muted);">Fecha entrevista
+            <input type="date" name="fecha_entrevista" value={a?.fecha_entrevista ?? ''} style={inp} />
+          </label>
+          <label style="font-size:.85rem; color:var(--color-muted);">Próxima acción
+            <input type="text" name="proxima_accion" value={a?.proxima_accion ?? ''} placeholder="enviar email…" style={inp} />
+          </label>
+          <label style="font-size:.85rem; color:var(--color-muted);">Fecha próxima acción
+            <input type="date" name="fecha_proxima" value={a?.fecha_proxima ?? ''} style={inp} />
+          </label>
+          <label style="font-size:.85rem; color:var(--color-muted);">Contacto (reclutador)
+            <input type="text" name="contacto" value={a?.contacto ?? ''} placeholder="Nombre" style={inp} />
+          </label>
+          <label style="font-size:.85rem; color:var(--color-muted);">Email de contacto
+            <input type="email" name="email_contacto" value={a?.email_contacto ?? ''} placeholder="reclutador@empresa.com" style={inp} />
+          </label>
+          <label style="font-size:.85rem; color:var(--color-muted);">Salario
+            <input type="text" name="salario" value={a?.salario ?? ''} placeholder="p. ej. 35–45k €" style={inp} />
+          </label>
+          <label style="font-size:.85rem; color:var(--color-muted);">Notas
+            <textarea name="notas" rows="5" style={inp}>{a?.notes ?? ''}</textarea>
+          </label>
+          <button style={btn('var(--color-primary)')}>Guardar</button>
+        </form>
+        </div>
+      </div>
+    </>
+  )}
+  <script is:inline>
+    (function () {
+      var b = document.getElementById('copiar-carta');
+      var t = document.getElementById('carta-text');
+      if (b && t) b.addEventListener('click', function () {
+        navigator.clipboard.writeText(t.value).then(function () {
+          b.textContent = '¡Copiado!'; setTimeout(function () { b.textContent = 'Copiar'; }, 1500);
+        });
+      });
+    })();
+  </script>
+</Base>

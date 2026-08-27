@@ -31,14 +31,25 @@ Lo que lo hace distinto: **todo se controla desde una única pantalla de Configu
 
 Ficha completa en el [portfolio](https://portfolio.ivanjonasfc.dev/proyectos/job-radar/).
 
-## Puesta en marcha 
+## Puesta en marcha
+
+**Camino rápido (script guiado):** crea el `.env` con contraseñas aleatorias, construye y arranca todo.
+
+```bash
+git clone https://github.com/IvanjonasFC/Job-radar.git && cd Job-radar
+./setup.sh                     # Linux/macOS   ·   Windows:  .\setup.ps1
+```
+
+**Manual (un comando):**
 ```bash
 git clone https://github.com/IvanjonasFC/Job-radar.git && cd Job-radar
 cp .env.example .env          # rellena las variables (contraseña de BD, etc.)
 docker compose up -d --build  # Postgres + web + worker
 ```
 
-Abre **http://127.0.0.1:3010**, entra en **Config** y define tu zona, portales, tu perfil y una clave de IA (Groq y Gemini tienen plan gratuito). A partir de ahí, **todo el sistema obedece a esa configuración**. Para lanzar una recogida de ofertas: `docker compose --profile scraper run --rm scraper`.
+Abre **http://127.0.0.1:3010**, entra en **Config** y define tu zona, portales, tu perfil y una clave de IA (Groq y Gemini tienen plan gratuito). A partir de ahí, **todo el sistema obedece a esa configuración**. Tus resultados (TABLERO, CSV, cartas) aparecen organizados en `./salidas`. Para lanzar una recogida de ofertas: `docker compose --profile scraper run --rm scraper`.
+
+📖 **Guía completa de instalación, configuración y estructura de carpetas:** [`INSTALL.md`](INSTALL.md).
 
 ## Características
 

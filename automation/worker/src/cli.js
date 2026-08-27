@@ -8,6 +8,7 @@ import { guardarCarta } from './exportdocs.js';
 import { runDigest } from './digest.js';
 import { healthcheck } from './health.js';
 import { reminders } from './reminders.js';
+import { initStructure } from './init.js';
 import { pool } from './db.js';
 
 const [cmd, a, b] = process.argv.slice(2);
@@ -20,7 +21,8 @@ const run = async () => {
   if (cmd === 'digest') return runDigest();
   if (cmd === 'health') return healthcheck();
   if (cmd === 'recordatorios') return reminders();
-  return { error: 'uso: score [n] | ingest | generar <id> | ia <id> <entrevista|carencias> | guardar-carta <id> | digest | health | recordatorios' };
+  if (cmd === 'init') return initStructure();
+  return { error: 'uso: init | score [n] | ingest | generar <id> | ia <id> <entrevista|carencias> | guardar-carta <id> | digest | health | recordatorios' };
 };
 run().then((r) => { console.log(JSON.stringify(r, null, 2)); return pool.end(); })
      .catch((e) => { console.error(e); process.exit(1); });

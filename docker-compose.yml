@@ -60,10 +60,14 @@ services:
       SCORE_INTERVAL_MIN: ${SCORE_INTERVAL_MIN:-15}
       INGEST_RSS: ${INGEST_RSS:-1}                  # 1 = el worker ingesta RSS (sin scraper Python)
       INGEST_INTERVAL_MIN: ${INGEST_INTERVAL_MIN:-360}
+      EXPORT_DIR: /vault/Ofertas                     # el worker vuelca aquí TABLERO/CSV/cartas
       # Claves de IA: mejor por la web (Config -> IA). Si prefieres por entorno, descomenta:
       # GROQ_API_KEY: ${GROQ_API_KEY:-}
       # GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # XAI_API_KEY: ${XAI_API_KEY:-}
+    volumes:
+      # Tu "vault" queda en el host, así puedes abrirlo (Obsidian/editor). Cambia la ruta con EXPORT_DIR_HOST.
+      - ${EXPORT_DIR_HOST:-./salidas}:/vault/Ofertas
 
   # --- Opcional: scraper Python (Indeed/LinkedIn). Corre y termina; prográmalo con cron externo. ---
   scraper:

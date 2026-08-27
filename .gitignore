@@ -28,5 +28,9 @@ Thumbs.db
 backups/
 *.dump
 
+# Vault de resultados del worker (cartas, CV, TABLERO, CSV) — datos personales, NUNCA subir
+salidas/
+vault/
+
 # Temporales del montaje (FUSE) — no subir
 .fuse_hidden*

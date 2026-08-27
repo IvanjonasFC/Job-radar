@@ -14,6 +14,8 @@ import { runDigest } from './digest.js';
 import { healthcheck } from './health.js';
 import { reminders } from './reminders.js';
 import { guardarCarta } from './exportdocs.js';
+import { initStructure } from './init.js';
+import { EXPORT_ON } from './files.js';
 
 const PORT = Number(process.env.PORT || 8080);
 const SCORE_MIN = Number(process.env.SCORE_INTERVAL_MIN || 15);
@@ -66,6 +68,8 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   log(`empleo-worker escuchando en :${PORT} · scoring cada ${SCORE_MIN} min · ingesta RSS ${INGEST_ON ? 'ON cada ' + INGEST_MIN + ' min' : 'OFF'}`);
+  // Crea la estructura de carpetas de salida la primera vez (idempotente).
+  if (EXPORT_ON) { const s = initStructure(); log('init estructura', s.ok ? ('OK ' + s.base + (s.created.length ? ' (nuevas: ' + s.created.join(', ') + ')' : '')) : ('ERROR ' + s.error)); }
   // Bucle de scoring (equivale al schedule de WF1).
   const runScore = () => scoreBatch(30).then((r) => log('score-loop', r)).catch((e) => log('score-loop ERROR', e.message));
   setInterval(runScore, SCORE_MIN * 60 * 1000);

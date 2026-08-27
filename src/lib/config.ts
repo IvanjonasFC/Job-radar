@@ -17,7 +17,7 @@ export type Config = {
   sites: string[];           // indeed, linkedin, glassdoor, google...
   search_terms: string[];    // términos de búsqueda
   countries: string[];       // países JobSpy (spain, mexico...)
-  home_location: string;     // localización principal ("Asturias, Spain")
+  home_location: string;     // localización principal ("Madrid, Spain")
   rss_feeds: string[];       // feeds RSS extra
   hours_old: number;         // antigüedad máx. de la oferta (horas)
   results_wanted: number;    // resultados por búsqueda

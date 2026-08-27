@@ -1,4 +1,4 @@
-// Constantes de marca/config (patron data/site.ts de Web Rutas Raices).
+// Constantes de marca/config del sitio.
 export const SITE = {
   marca: 'CRM Empleo',
   // Titular que aparece en la cabecera (Empleo <titular>). Cámbialo por tu nombre o marca.

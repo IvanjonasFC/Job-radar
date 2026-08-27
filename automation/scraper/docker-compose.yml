@@ -19,8 +19,8 @@ services:
       WORKERS: ${WORKERS:-4}
       SEARCH_TERMS: ${SEARCH_TERMS:-desarrollador,programador,full stack developer,backend developer,frontend developer,python developer,react developer,angular developer,node developer,java developer,php developer,.net developer,javascript developer,devops,administrador de sistemas,tecnico de sistemas,soporte informatico,helpdesk,data engineer,ingeniero de software,cloud engineer,flutter developer,informatico,tecnico informatico,administrador de redes,desarrollador junior,programador junior}
       HOME_COUNTRY: ${HOME_COUNTRY:-spain}
-      HOME_LOCATION: ${HOME_LOCATION:-Asturias, Spain}
-      LOCAL_CITIES: ${LOCAL_CITIES:-asturias,gijon,gijón,oviedo,aviles,avilés,langreo,mieres,siero}
+      HOME_LOCATION: ${HOME_LOCATION:-Madrid, Spain}
+      LOCAL_CITIES: ${LOCAL_CITIES:-madrid,alcobendas,getafe}
       FILTER: ${FILTER:-it_local_remote}
       RESULTS_WANTED: ${RESULTS_WANTED:-40}
       HOURS_OLD: ${HOURS_OLD:-168}

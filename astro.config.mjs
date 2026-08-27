@@ -6,7 +6,7 @@ import node from '@astrojs/node';
 import tailwindcss from '@tailwindcss/vite';
 
 // CRM = datos en vivo (lee/escribe la BD `empleo`) → SSR (output server) con adaptador Node.
-// (Diferencia con Web Rutas Raices, que es SSG estatico. Mismas convenciones, distinto render.)
+// CRM con datos en vivo -> SSR con adaptador Node.
 export default defineConfig({
   site: 'https://empleo.example.com',
   output: 'server',

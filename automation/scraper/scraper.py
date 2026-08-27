@@ -12,8 +12,8 @@ en la pestaña Config de la web manda (portales, terminos, paises, zona, RSS...)
   SITES          CSV de sitios (indeed,google[,glassdoor,linkedin]). Def: indeed,google
   SEARCH_TERMS   CSV de terminos. Def: stack IT
   HOME_COUNTRY   pais principal (usa HOME_LOCATION). Def: spain
-  HOME_LOCATION  localizacion preferida del pais principal. Def: "Asturias, Spain"
-  LOCAL_CITIES   CSV que cuenta como "local". Def: Asturias
+  HOME_LOCATION  localizacion preferida del pais principal. Def: "Madrid, Spain"
+  LOCAL_CITIES   CSV que cuenta como "local". Def: Madrid
   IT_KEYWORDS    CSV de keywords de sector para el filtro por titulo. Def: stack IT
   FILTER         it_local_remote | remote_only | off. Def: it_local_remote
   RESULTS_WANTED por busqueda. Def: 25
@@ -63,9 +63,9 @@ SEARCH_TERMS = env_csv(
     "desarrollador junior,programador junior",
 )
 HOME_COUNTRY = os.getenv("HOME_COUNTRY", COUNTRIES[0] if COUNTRIES else "spain").lower()
-HOME_LOCATION = os.getenv("HOME_LOCATION", "Asturias, Spain")
+HOME_LOCATION = os.getenv("HOME_LOCATION", "Madrid, Spain")
 LOCAL = [x.lower() for x in env_csv(
-    "LOCAL_CITIES", "asturias,gijon,gijón,oviedo,aviles,avilés,langreo,mieres,siero")]
+    "LOCAL_CITIES", "madrid,alcobendas,getafe")]
 IT_KW = [x.lower() for x in env_csv(
     "IT_KEYWORDS",
     "developer,programador,desarrollador,full stack,fullstack,backend,frontend,python,java,react,"

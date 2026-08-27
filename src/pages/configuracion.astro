@@ -111,11 +111,11 @@ GRANT SELECT, INSERT, UPDATE ON empleo.settings TO empleo_web;</pre>
         <div style="display:grid; grid-template-columns:1fr 2fr; gap:14px;">
           <div>
             <label style={lbl}>Etiqueta de tu zona</label>
-            <input type="text" name="local_region" value={cfg.local_region} placeholder="Asturias" style={inp} />
+            <input type="text" name="local_region" value={cfg.local_region} placeholder="Madrid" style={inp} />
           </div>
           <div>
             <label style={lbl}>Ciudades / regiones locales</label>
-            <input type="text" name="local_cities" value={cfg.local_cities.join(', ')} placeholder="asturias, gijon, oviedo, aviles" style={inp} />
+            <input type="text" name="local_cities" value={cfg.local_cities.join(', ')} placeholder="madrid, alcobendas, getafe" style={inp} />
           </div>
         </div>
         <hr style={hr} />

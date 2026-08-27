@@ -2,7 +2,7 @@
   "name": "empleo-web",
   "type": "module",
   "version": "0.1.0",
-  "description": "CRM web de busqueda de empleo (Astro SSR sobre la BD empleo). Convenciones de Web Rutas Raices.",
+  "description": "CRM web de busqueda de empleo self-hosted (Astro SSR sobre PostgreSQL).",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",

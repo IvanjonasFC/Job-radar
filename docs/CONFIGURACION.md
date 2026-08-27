@@ -20,7 +20,7 @@ Para lo que la web no cubre (scraper, prompts de IA, etc.), la tabla siguiente d
 | **Qué se puntúa/descarta en n8n** | **Pestaña _Config_ → Afinado del scoring** (wf1 lo lee de la BD) o las listas del propio `wf1-radar.json`. |
 | **Puerto** | `.env` → `PORT` (por defecto 3010) y `astro.config.mjs`. |
 | **Colores / tema** | `src/styles/global.css`, bloque `@theme` (acento en `--color-primary`). |
-| **Tu zona local** (para el 📍 y “cerca de ti”) | `src/lib/loc.ts` → `ASTUR_RX` / `CIUDAD_AST` (cambia Asturias por tu región). |
+| **Tu zona local** (para el 📍 y “cerca de ti”) | Config -> seccion "Ciudades / regiones locales" (`local_cities`); se aplica sin tocar codigo. |
 | **Qué considera “remoto/híbrido/presencial”** | `src/lib/loc.ts` → `REMOTO_RX` / `HIBRIDO_RX` / `PRESEN_RX`. |
 | **Ciudades/portales del scraper** | **Pestaña _Config_ → Fuentes de scraping** (el scraper lo lee de la BD si `SETTINGS_FROM_DB=1`). O en `automation/scraper/.env` si prefieres env. |
 | **Qué puestos incluir/excluir** | `automation/n8n/wf1-radar.json`, nodo *Prefiltro* → arrays `INCLUDE` / `EXCLUDE` / `NONIT` / `LOCAL`. |

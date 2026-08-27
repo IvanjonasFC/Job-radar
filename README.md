@@ -30,6 +30,16 @@ Lo que lo hace distinto: **todo se controla desde una única pantalla de Configu
 
 Ficha completa en el [portfolio](https://portfolio.ivanjonasfc.dev/proyectos/job-radar/).
 
+## 🚀 Puesta en marcha rápida
+
+```bash
+git clone https://github.com/IvanjonasFC/Job-radar.git && cd Job-radar
+cp .env.example .env          # rellena las variables (contraseña de BD, etc.)
+docker compose up -d --build  # Postgres + web + worker
+```
+
+Abre **http://127.0.0.1:3010**, entra en **Config** y define tu zona, portales, tu perfil y una clave de IA (Groq y Gemini tienen plan gratuito). A partir de ahí, **todo el sistema obedece a esa configuración**. Para lanzar una recogida de ofertas: `docker compose --profile scraper run --rm scraper`.
+
 ## Características
 
 - **Radar de ofertas** — scraping (Python + JobSpy: Indeed/LinkedIn) + feeds RSS, con prefiltro por título configurable.
@@ -45,9 +55,12 @@ Ficha completa en el [portfolio](https://portfolio.ivanjonasfc.dev/proyectos/job
 
 <table>
   <tr>
-    <td align="center"><b>Analíticas</b><br/><img src="assets/analiticas.png" width="270" alt="Analíticas" /></td>
-    <td align="center"><b>Pipeline (Kanban)</b><br/><img src="assets/pipeline.png" width="270" alt="Pipeline" /></td>
-    <td align="center"><b>Ofertas</b><br/><img src="assets/ofertas.png" width="270" alt="Ofertas" /></td>
+    <td align="center"><b>Analíticas</b><br/><img src="assets/analiticas.png" width="380" alt="Analíticas" /></td>
+    <td align="center"><b>Pipeline (Kanban)</b><br/><img src="assets/pipeline.png" width="380" alt="Pipeline" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Ofertas</b><br/><img src="assets/ofertas.png" width="380" alt="Ofertas" /></td>
+    <td align="center"><b>Configuración</b><br/><img src="assets/Config.png" width="380" alt="Configuración" /></td>
   </tr>
 </table>
 

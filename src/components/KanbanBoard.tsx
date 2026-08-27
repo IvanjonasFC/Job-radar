@@ -94,7 +94,7 @@ export default function KanbanBoard({ initial, abiertasOcultas = 0 }: { initial:
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <span className={`badge ${badgeClass(c.score ?? 0)}`}>{c.score ?? 0}</span>
                     <strong style={{ fontSize: '.86rem', color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.company}</strong>
-                    {c.cerca && <span title="Cerca de ti — Asturias" style={{ marginLeft: 'auto', width: 7, height: 7, borderRadius: '50%', background: 'var(--color-primary)', flex: '0 0 auto' }} />}
+                    {c.cerca && <span title="Cerca de tu zona" style={{ marginLeft: 'auto', width: 7, height: 7, borderRadius: '50%', background: 'var(--color-primary)', flex: '0 0 auto' }} />}
                   </div>
                   <div style={{ fontSize: '.82rem', color: 'var(--color-text)' }}>{c.title}</div>
                   <div style={{ fontSize: '.74rem', color: 'var(--color-muted)', marginTop: 4 }}>

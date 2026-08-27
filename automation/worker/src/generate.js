@@ -1,8 +1,10 @@
 // Genera carta + ajustes de CV (equivalente a WF3 · generar) y documentos IA on-demand
-// (equivalente a WF6 · prep entrevista / carencias). Escribe en la BD (la web lo lee).
+// (equivalente a WF6 · prep entrevista / carencias). Escribe en la BD (la web lo lee) y,
+// si EXPORT_FILES está activo, exporta también los .md al vault (igual que WF3 "Guardar MD").
 import { q, one, logEvent } from './db.js';
 import { getSettings, getPerfil, getProviders } from './config.js';
 import { chat } from './ai.js';
+import { exportOfferDocs } from './exportdocs.js';
 
 const NL = '\n';
 
@@ -51,7 +53,8 @@ export async function generarCarta(id) {
   const providers = getProviders(settings, 'gen');
   if (!providers.length) return { ok: false, error: 'sin proveedores de IA' };
 
-  const o = await one(`SELECT id, title, company, location, modalidad, score, verdict, keywords, description
+  const o = await one(`SELECT id, title, company, location, modalidad, score, verdict, keywords,
+                              description, reasons, source, url
                        FROM empleo.job_offers WHERE id=$1`, [id]);
   if (!o) return { ok: false, error: 'oferta no encontrada' };
 
@@ -81,7 +84,15 @@ export async function generarCarta(id) {
   await q(`UPDATE empleo.job_offers SET status='generada', generated_at=now(), updated_at=now()
            WHERE id=$1 AND status IN ('nueva','evaluada','notificada')`, [id]);
   await logEvent(id, 'generada', 'carta+CV ia=' + r.provider);
-  return { ok: true, ia: r.provider };
+
+  // Export a ficheros .md (WF3 "Guardar MD"), best-effort: nunca rompe la generación.
+  let exported = null;
+  try {
+    const e = await exportOfferDocs(o, { asunto, carta_md: carta, resumen_cv: resumen, cv_ajustes_md: ajustes });
+    exported = e && e.ok ? e.folderPath : (e && (e.error || e.skipped)) || null;
+  } catch (e) { exported = 'export ERROR: ' + ((e && e.message) || e); }
+
+  return { ok: true, ia: r.provider, exported };
 }
 
 // WF6: prep de entrevista o análisis de carencias.

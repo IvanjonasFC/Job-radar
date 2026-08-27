@@ -7,9 +7,17 @@ bucle principal, **sin necesitar n8n**:
 - **Genera** carta + ajustes de CV (= WF3) y **prep de entrevista / carencias** (= WF6).
 - **Aplicar / descartar** (estado + candidatura en la BD).
 - **Ingesta RSS opcional** → con esto un montaje básico no necesita ni el scraper Python ni n8n.
+- **Digest** → `_TABLERO.md` + `candidaturas.csv` (= WF2).
+- **Healthcheck** + **caduca ofertas >30 días** (= WF4).
+- **Recordatorios** de seguimiento (= WF5), desde la tabla `applications`.
+- **Export a ficheros** de ficha + carta + ajustes de CV al vault (= WF3/WF7).
 
 Escribe todo en la misma BD `empleo`, así que la **web funciona igual**. Puedes usar **el worker, n8n, o los
 dos a la vez** (ambos leen la config y escriben la misma BD).
+
+> **Paridad con n8n:** el worker cubre **todo lo que hace tu montaje n8n salvo los avisos por Telegram**.
+> El detalle completo (qué hace cada uno, qué se añadió y las diferencias menores) está en
+> [`PARIDAD-n8n.md`](./PARIDAD-n8n.md).
 
 ## Por qué existe
 
@@ -51,8 +59,12 @@ local (sin clave). Endpoints por defecto ya puestos; solo hace falta la clave.
 ```bash
 node src/cli.js score 30              # puntúa 30 ofertas nuevas
 node src/cli.js ingest                # lee los feeds RSS de Config
-node src/cli.js generar 123           # genera carta/CV de la oferta 123
+node src/cli.js generar 123           # genera carta/CV de la oferta 123 (+ export .md)
 node src/cli.js ia 123 entrevista     # prep de entrevista (o 'carencias')
+node src/cli.js guardar-carta 123     # reescribe la carta en el vault (WF7)
+node src/cli.js digest                # regenera _TABLERO.md + candidaturas.csv (WF2)
+node src/cli.js health                # healthcheck + caduca ofertas >30d (WF4)
+node src/cli.js recordatorios         # recalcula _RECORDATORIOS.md (WF5)
 ```
 
 ## Endpoints
@@ -61,14 +73,35 @@ node src/cli.js ia 123 entrevista     # prep de entrevista (o 'carencias')
 |---|---|---|
 | GET | `/health` | estado |
 | GET | `…-radar` | ingesta (si `INGEST_RSS=1`) + puntúa un lote |
-| GET | `…-generar?id=N` | carta + CV |
+| GET | `…-generar?id=N` | carta + CV (+ export .md) |
 | GET | `…-aplicar?id=N` | marca aplicada + candidatura |
 | GET | `…-descartar?id=N` | descarta |
 | GET | `…-ia?id=N&tipo=entrevista\|carencias` | documento IA |
+| GET | `…-guardar-carta?id=N` | reescribe la carta en el vault (WF7) |
+| GET | `…-digest` | regenera TABLERO + CSV (WF2) |
+| GET | `…-health` | healthcheck + caducar (WF4) |
+| GET | `…-recordatorios` | recalcula recordatorios (WF5) |
+
+## Tareas periódicas (bucles)
+
+Al arrancar el server corren automáticamente (además del scoring). Se apagan con las variables:
+
+| Tarea | Var (def.) | Intervalo min (def.) |
+|---|---|---|
+| Digest (WF2) | `DIGEST_ON` (1) | `DIGEST_INTERVAL_MIN` (720) |
+| Healthcheck + caducar (WF4) | `HEALTH_ON` (1) | `HEALTH_INTERVAL_MIN` (1440) |
+| Recordatorios (WF5) | `REMIND_ON` (1) | `REMIND_INTERVAL_MIN` (1440) |
+
+## Exportación a ficheros
+
+- `EXPORT_DIR` (def. `/vault/Ofertas`): carpeta destino (móntala como volumen, igual que con n8n).
+- `EXPORT_FILES` (def. `1`): activa/desactiva la escritura a fichero.
+- `EXPORT_FOOTER`: pie de la carta (nombre/contacto); por defecto un placeholder.
 
 ## Qué NO hace (a propósito)
 
-- No escribe los `.md` en el vault de Obsidian (eso es específico de n8n/WF3-WF7; la carta ya está en la BD).
-- No manda Telegram (opcional; usa n8n si lo quieres).
+- **No manda Telegram.** Es lo único de n8n que no se replica. `healthcheck()` y `reminders()`
+  **devuelven** las alertas en su resultado, así que enchufar un notificador es trivial si algún día
+  lo quieres. Todo lo demás (digest, TABLERO, CSV, caducidad, recordatorios, export de cartas) ya está.
 
-Para esas extras, usa n8n en paralelo. Para el CRM funcional, el worker basta.
+Ver [`PARIDAD-n8n.md`](./PARIDAD-n8n.md) para la comparativa completa.

@@ -4,6 +4,7 @@
 
 **Búsqueda de empleo automatizada y self-hosted: scraping + scoring con IA multi-proveedor, todo gobernado desde una única pantalla de configuración.**
 
+[![CI](https://github.com/IvanjonasFC/Job-radar/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanjonasFC/Job-radar/actions/workflows/ci.yml)
 [![Astro](https://img.shields.io/badge/Astro-5-BC52EE?logo=astro&logoColor=white)](https://astro.build)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org)

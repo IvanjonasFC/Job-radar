@@ -1,12 +1,12 @@
 # Web CRM (Astro SSR, adaptador Node standalone). Build + runtime en Node 20 alpine.
-FROM node:20-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /app
 COPY package.json ./
 RUN npm install
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS run
+FROM node:25-alpine AS run
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0

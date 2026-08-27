@@ -1,0 +1,35 @@
+version: 2
+updates:
+  # Web (Astro / Node)
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # Worker (Node)
+  - package-ecosystem: npm
+    directory: "/automation/worker"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # Imágenes base de los Dockerfile
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: "/automation/worker"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: "/automation/scraper"
+    schedule:
+      interval: weekly
+
+  # Las propias GitHub Actions
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web · build (Astro)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: npm run build
+        env:
+          # Placeholder: el build SSR no ejecuta consultas, pero así nada puede fallar por variable ausente.
+          DATABASE_URL: postgres://user:pass@localhost:5432/db
+
+  scraper:
+    name: Scraper · sintaxis (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m py_compile automation/scraper/scraper.py
+
+  worker:
+    name: Worker · sintaxis (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: node --check de cada módulo
+        run: |
+          shopt -s nullglob
+          for f in automation/worker/src/*.js automation/worker/*.js; do
+            node --check "$f" && echo "OK $f"
+          done
+
+  n8n:
+    name: n8n · JSON válido
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar los workflows exportados
+        run: |
+          for f in automation/n8n/*.json; do
+            python3 -m json.tool "$f" > /dev/null && echo "OK $f"
+          done

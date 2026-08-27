@@ -1,18 +1,11 @@
-name: Publicar imágenes Docker
-
-# Construye y publica las 3 imágenes (web · worker · scraper) en GitHub Container Registry
-# (ghcr.io) al crear un Release, o manualmente desde la pestaña Actions.
-# No requiere secretos: usa el GITHUB_TOKEN del propio repositorio.
-
+﻿name: Publicar imágenes Docker
 on:
-  release:
-    types: [ published ]
+  push:
+    tags: ['v*']
   workflow_dispatch:
-
 permissions:
-  contents: read
+  contents: write
   packages: write
-
 jobs:
   images:
     runs-on: ubuntu-latest
@@ -20,44 +13,37 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: web
-            context: .
-            file: ./Dockerfile
-          - name: worker
-            context: ./automation/worker
-            file: ./automation/worker/Dockerfile
-          - name: scraper
-            context: ./automation/scraper
-            file: ./automation/scraper/Dockerfile
+          - { name: web,     context: .,                     file: ./Dockerfile }
+          - { name: worker,  context: ./automation/worker,   file: ./automation/worker/Dockerfile }
+          - { name: scraper, context: ./automation/scraper,  file: ./automation/scraper/Dockerfile }
     steps:
       - uses: actions/checkout@v4
-
       - uses: docker/setup-buildx-action@v3
-
-      - name: Login en ghcr.io
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Metadatos (tags + labels)
-        id: meta
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}-${{ matrix.name }}
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
-
-      - name: Build & push
-        uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+  release:
+    needs: images
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

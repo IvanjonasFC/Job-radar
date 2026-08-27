@@ -30,8 +30,7 @@ Lo que lo hace distinto: **todo se controla desde una única pantalla de Configu
 
 Ficha completa en el [portfolio](https://portfolio.ivanjonasfc.dev/proyectos/job-radar/).
 
-## 🚀 Puesta en marcha rápida
-
+## Puesta en marcha 
 ```bash
 git clone https://github.com/IvanjonasFC/Job-radar.git && cd Job-radar
 cp .env.example .env          # rellena las variables (contraseña de BD, etc.)

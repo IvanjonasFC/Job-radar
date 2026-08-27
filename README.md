@@ -14,7 +14,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Portfolio](https://img.shields.io/badge/Portfolio-ff6b00?logo=astro&logoColor=white)](https://portfolio.ivanjonasfc.dev/proyectos/job-radar/)
 
-<img src="assets/dashboard.png" alt="Job-radar — panel de hoy" width="920" />
+<img src="assets/Dashboard.png" alt="Job-radar — panel de hoy" width="920" />
 
 </div>
 
@@ -55,8 +55,8 @@ Abre **http://127.0.0.1:3010**, entra en **Config** y define tu zona, portales, 
 
 <table>
   <tr>
-    <td align="center"><b>Analíticas</b><br/><img src="assets/analiticas.png" width="380" alt="Analíticas" /></td>
-    <td align="center"><b>Pipeline (Kanban)</b><br/><img src="assets/pipeline.png" width="380" alt="Pipeline" /></td>
+    <td align="center"><b>Analíticas</b><br/><img src="assets/Analiticas.png" width="380" alt="Analíticas" /></td>
+    <td align="center"><b>Pipeline (Kanban)</b><br/><img src="assets/Pipeline.png" width="380" alt="Pipeline" /></td>
   </tr>
   <tr>
     <td align="center"><b>Ofertas</b><br/><img src="assets/ofertas.png" width="380" alt="Ofertas" /></td>

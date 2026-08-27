@@ -1,0 +1,30 @@
+﻿name: Reporte de bug
+description: Informa de un fallo para que podamos corregirlo
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Qué ocurre
+      description: Describe el bug y qué esperabas que pasara
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pasos para reproducir
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Entorno
+      placeholder: SO, versión, navegador/dispositivo, cómo lo despliegas...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs relevantes
+      render: shell

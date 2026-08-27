@@ -32,6 +32,6 @@
     "tailwindcss": "latest",
     "@tailwindcss/vite": "latest",
     "drizzle-kit": "latest",
-    "typescript": "^5.7.0"
+    "typescript": "^7.0.2"
   }
 }

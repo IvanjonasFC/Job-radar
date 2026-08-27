@@ -1,15 +1,15 @@
 # Web CRM (Astro SSR, adaptador Node standalone).
-# Build + runtime en Node 20 slim (glibc): evita los fallos de binarios nativos
-# (Tailwind v4 oxide / lightningcss) que sufre Alpine (musl), y usa el lockfile
-# con `npm ci` para instalar exactamente las mismas versiones que en local.
-FROM node:20-slim AS build
+# Node 22: Astro 7 exige engines.node >=22.12.0 (su compilador nativo no arranca
+# en Node 20). Base slim (glibc) + lockfile con `npm ci` = build reproducible con
+# las mismas versiones y binarios nativos que en local.
+FROM node:22-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:20-slim AS run
+FROM node:22-slim AS run
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
